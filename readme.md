@@ -19,6 +19,9 @@ A simple yet powerful web-based editor for batch-editing color parameters in Mar
   * Toggle the visibility of grayscale parameters.  
 * **Simplified Saving**: Save all modified files to an "output" folder on your computer with a single click.
 
+## **💾 How To Download**
+Scroll up this page, click on the green **Code** button and select **Download ZIP**.
+
 ## **🏗️ Setup Requirements**
 0. Get latest UassetGUI exe from [this repo](https://github.com/atenfyr/UAssetGUI/releases).
 1. **Setup** the requirements to make the conversion scripts work by placing `UassetGUI.exe` in the VFX-editor folder.
@@ -36,7 +39,7 @@ A simple yet powerful web-based editor for batch-editing color parameters in Mar
 5. **Save your files** by clicking the "Save Files" button. A window will appear to ask for your output folder, grant access the browser to that path. The modified files will be saved to a new folder named `output` in the same location you chose to save. 
 6. **Convert your edited .json files** with the `convert_to_uasset.bat` script, wait for the conversion to complete and the converted files will be ready for paking.
 
-## **🔄️ Convertion scripts Usage**
+## **🔄️ Convertion Scripts Usage**
 
 Check **Setup Requirements** first to be able to use the scripts.
 * `convert_to_json.bat` can be used to batch convert .uasset files to .json.
