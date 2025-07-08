@@ -1,4 +1,4 @@
-# **<img src="https://cdn.jsdelivr.net/gh/ilSaturnooooo/saturno-resourcers/saturno_logo_full-alpha-icon-wideres.png" alt="Saturno Logo" width="32"/> Rivals VFX Editor**
+# **<img src="https://cdn.jsdelivr.net/gh/ilSaturnooooo/saturno-resourcers/saturno_logo_full-alpha-icon.png" width="48"/> Rivals VFX Editor**
 
 A simple yet powerful web-based editor for batch-editing color parameters in Marvel Rivals' VFX material files.
 
