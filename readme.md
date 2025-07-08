@@ -20,7 +20,7 @@ A simple yet powerful web-based editor for batch-editing color parameters in Mar
 * **Simplified Saving**: Save all modified files to an "output" folder on your computer with a single click.
 
 ## **🏗️ Setup Requirements**
-
+0. Get latest UassetGUI exe from [this repo](https://github.com/atenfyr/UAssetGUI/releases).
 1. **Setup** the requirements to make the conversion scripts work by placing `UassetGUI.exe` in the VFX-editor folder.
 2. Get latest mappings file for Rivals, move it to the VFX-editor folder, rename it to `"Rivals.usmap"` and set it up inside your UassetGUI. 
 > You need to do this even if you already have done it before because of the way UassetGUI works.
@@ -41,7 +41,3 @@ A simple yet powerful web-based editor for batch-editing color parameters in Mar
 Check **Setup Requirements** first to be able to use the scripts.
 * `convert_to_json.bat` can be used to batch convert .uasset files to .json.
 * `convert_to_uasset.bat` can be used to batch convert .json files back to .uasset.
-
-
-
-*by Saturn*
