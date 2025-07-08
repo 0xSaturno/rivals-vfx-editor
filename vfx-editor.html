@@ -638,11 +638,11 @@
                                 <StyledPanel title="Global Controls">
                                     <div className="flex flex-col space-y-6">
                                         <div className="space-y-2">
-                                            <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Fixed Color</h3>
+                                            <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Single Color</h3>
                                             <div className="flex items-center space-x-4">
                                                 <input type="color" value={masterColor} onChange={e => setMasterColor(e.target.value)} className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}/>
                                                 <button onClick={applyMasterColor} className="flex-grow px-4 py-3 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
-                                                    Apply Fixed Color
+                                                    Apply Single Color
                                                 </button>
                                             </div>
                                         </div>
