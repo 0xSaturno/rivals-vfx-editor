@@ -1,6 +1,6 @@
 # **<img src="https://cdn.jsdelivr.net/gh/ilSaturnooooo/saturno-resourcers/saturno_logo_full-alpha-icon.png" width="28"/> Rivals VFX Editor**
 
-A simple yet powerful web-based editor for batch-editing color parameters in Marvel Rivals' VFX material files.
+A simple yet powerful web-based editor for batch editing color parameters in Marvel Rivals' VFX material files.
 
 ## **✨ Features**
 
@@ -27,7 +27,7 @@ Scroll up this page, click on the green **Code** button and select **Download ZI
 1. **Setup** the requirements to make the conversion scripts work by placing `UassetGUI.exe` in the VFX-editor folder.
 2. Get latest mappings file for Rivals, move it to the VFX-editor folder, rename it to `"Rivals.usmap"` and set it up inside your UassetGUI. 
 > You need to do this even if you already have done it before because of the way UassetGUI works.
-3. You should be ready to use the batch scripts when they will be needed.
+3. You should be ready to use the scripts when they will be needed.
 
 ## **🌈 VFX Editor Usage**
 
@@ -39,7 +39,7 @@ Scroll up this page, click on the green **Code** button and select **Download ZI
 5. **Save your files** by clicking the "Save Files" button. A window will appear to ask for your output folder, grant the browser access to that path. The modified files will be saved to a new folder named `output` in the same location you chose to save. 
 6. **Convert your edited .json files** with the `convert_to_uasset.bat` script, wait for the conversion to complete and the converted files will be ready for paking.
 
-## **🔄️ Convertion Scripts Usage**
+## **🔄️ Conversion Scripts Usage**
 
 Check **Setup Requirements** first to be able to use the scripts.
 * `convert_to_json.bat` can be used to batch convert .uasset files to .json.
