@@ -36,7 +36,7 @@ Scroll up this page, click on the green **Code** button and select **Download ZI
 2. **Load your .json files** by dragging them into the import area or by clicking to select them.
 3. **Select the parameters** you want to modify using the checkboxes.
 4. **Use the global controls** in the left panel to make your desired changes.
-5. **Save your files** by clicking the "Save Files" button. A window will appear to ask for your output folder, grant access the browser to that path. The modified files will be saved to a new folder named `output` in the same location you chose to save. 
+5. **Save your files** by clicking the "Save Files" button. A window will appear to ask for your output folder, grant the browser access to that path. The modified files will be saved to a new folder named `output` in the same location you chose to save. 
 6. **Convert your edited .json files** with the `convert_to_uasset.bat` script, wait for the conversion to complete and the converted files will be ready for paking.
 
 ## **🔄️ Convertion Scripts Usage**
