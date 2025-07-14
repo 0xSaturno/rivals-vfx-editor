@@ -19,8 +19,6 @@ A simple yet powerful web-based editor for batch editing color parameters in Mar
   * Toggle the visibility of grayscale parameters.  
 * **Simplified Saving**: Save all modified files to an "output" folder on your computer with a single click.
 
-## **💾 How To Download**
-Scroll up this page, click on the green **Code** button and select **Download ZIP**.
 
 ## **🏗️ Setup Requirements**
 0. Get latest UassetGUI exe from [this repo](https://github.com/atenfyr/UAssetGUI/releases).
@@ -31,12 +29,11 @@ Scroll up this page, click on the green **Code** button and select **Download ZI
 
 ## **🌈 VFX Editor Usage**
 
-1. **Open the `vfx-editor.html` file** in any Chromium-based browser. 
-> Disable any dark mode extensions for the html page only to ensure better compatibility.
+1. **Launch the `Rivals VFX Editor.exe` app**. 
 2. **Load your .json files** by dragging them into the import area or by clicking to select them.
 3. **Select the parameters** you want to modify using the checkboxes.
 4. **Use the global controls** in the left panel to make your desired changes.
-5. **Save your files** by clicking the "Save Files" button. A window will appear to ask for your output folder, grant the browser access to that path. The modified files will be saved to a new folder named `output` in the same location you chose to save. 
+5. **Save your files** by clicking the "Save Files" button. A window will appear to ask for your output folder, grant the app access to that path. The modified files will be saved to a new folder named `output` in the same location you chose to save. 
 6. **Convert your edited .json files** with the `convert_to_uasset.bat` script, wait for the conversion to complete and the converted files will be ready for paking.
 
 ## **🔄️ Conversion Scripts Usage**
