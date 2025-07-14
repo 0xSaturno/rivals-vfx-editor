@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rivals VFX Editor</title>
+    <link rel="icon" type="image/x-icon" href="./assets/saturn-icon.ico">
+    <link rel="stylesheet" href="./css/tailwind.min.css">
+    <script src="./js/react.development.js"></script>
+    <script src="./js/react-dom.development.js"></script>
+    <script src="./js/babel.min.js"></script>
+    
+    <style>
+        /* Proprietà personalizzate per la palette di colori del tema */
+        :root {
+            --font-main: 'DM Mono', monospace;
+            --bg-4: #1e1f22; /* Sfondo principale */
+            --bg-3: #2b2d31; /* Sfondi delle card */
+            --bg-2: #383a40; /* Bordi, input */
+            --bg-1: #40434b; /* Stati hover */
+            
+            --text-1: #f2f2f2; /* Testo più luminoso */
+            --text-2: #dbdee1; /* Titoli, testo importante */
+            --text-3: #b8b9bf; /* Testo normale */
+            --text-4: #9499a0; /* Testo attenuato */
+
+            --accent-main: #ccffff;
+            --accent-green: #248046;
+        }
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-4);
+        }
+        
+        /* Stili personalizzati per lo slider */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 4px;
+            background: var(--bg-2);
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--accent-main);
+            cursor: pointer;
+            border: 2px solid var(--bg-4);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: var(--accent-main);
+            cursor: pointer;
+            border: 2px solid var(--bg-4);
+        }
+
+        /* ===== Stili per la Scrollbar Personalizzata ===== */
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-4);
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: var(--bg-1);
+            border-radius: 20px;
+            border: 3px solid var(--bg-4);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: var(--accent-main);
+        }
+        html {
+            scrollbar-width: thin;
+            scrollbar-color: var(--bg-1) var(--bg-4);
+        }
+
+        /* ===== Stili per l'Animazione delle Particelle ===== */
+        .particle-header {
+            position: relative;
+            overflow: hidden; /* Nasconde le particelle che escono dai bordi */
+            background-color: #000; /* Sfondo nero per le particelle */
+        }
+
+        .particles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            background: white;
+            animation: float infinite linear;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translateY(0) translateX(0);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-150px) translateX(20px);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Il codice React dell'applicazione inizia qui
+
+        const { useState, useCallback, useMemo, useRef, useEffect } = React;
+
+        // Componente per le particelle
+        const Particles = () => {
+            const particles = useMemo(() => {
+                const particleArray = [];
+                const numParticles = 200; // Aumentato il numero di stelle
+                for (let i = 0; i < numParticles; i++) {
+                    const size = Math.random() * 2.5 + 0.5; // Dimensioni da 0.5 a 3px
+                    const duration = 5 + Math.random() * 10; // Durata più breve per maggiore velocità (da 5 a 15s)
+                    const style = {
+                        width: `${size}px`,
+                        height: `${size}px`,
+                        left: `${Math.random() * 100}%`,
+                        top: `${Math.random() * 100}%`,
+                        animationDelay: `-${Math.random() * duration}s`, // Ritardo negativo per avvio immediato e casuale
+                        animationDuration: `${duration}s`, 
+                    };
+                    particleArray.push(<div key={i} className="particle" style={style}></div>);
+                }
+                return particleArray;
+            }, []);
+
+            return <div className="particles">{particles}</div>;
+        };
+
+
+        // Funzione di utilità per impostare un valore in un oggetto annidato
+        const setNestedValue = (obj, path, value) => {
+          let schema = obj;
+          for (let i = 0; i < path.length - 1; i++) {
+            schema = schema[path[i]];
+          }
+          schema[path[path.length - 1]] = value;
+        };
+        
+        const rgbaToDisplayHex = (r, g, b) => {
+            const maxVal = Math.max(r, g, b, 1.0);
+            const normR = r / maxVal;
+            const normG = g / maxVal;
+            const normB = b / maxVal;
+
+            const toHex = (c) => {
+                const numC = Number.isNaN(c) ? 0 : Number(c);
+                const hex = Math.round(numC * 255).toString(16);
+                return hex.length === 1 ? '0' + hex : hex;
+            };
+            return `#${toHex(normR)}${toHex(normG)}${toHex(normB)}`;
+        };
+
+        const hexToRgba = (hex) => {
+          let r = 0, g = 0, b = 0;
+          if (hex.length === 4) {
+            r = parseInt(hex[1] + hex[1], 16);
+            g = parseInt(hex[2] + hex[2], 16);
+            b = parseInt(hex[3] + hex[3], 16);
+          } else if (hex.length === 7) {
+            r = parseInt(hex[1] + hex[2], 16);
+            g = parseInt(hex[3] + hex[4], 16);
+            b = parseInt(hex[5] + hex[6], 16);
+          }
+          return { r: r / 255, g: g / 255, b: b / 255 };
+        };
+        
+        function rgbToHsl(r, g, b) {
+            const maxVal = Math.max(r, g, b, 1.0);
+            if (maxVal === 0) return [0, 0, 0];
+            const r_norm = r / maxVal;
+            const g_norm = g / maxVal;
+            const b_norm = b / maxVal;
+            
+            const max = Math.max(r_norm, g_norm, b_norm), min = Math.min(r_norm, g_norm, b_norm);
+            let h, s, l = (max + min) / 2;
+
+            if (max === min) {
+                h = s = 0; // achromatico
+            } else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r_norm: h = (g_norm - b_norm) / d + (g_norm < b_norm ? 6 : 0); break;
+                    case g_norm: h = (b_norm - r_norm) / d + 2; break;
+                    case b_norm: h = (r_norm - g_norm) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return [h, s, l];
+        }
+
+        function hslToRgb(h, s, l) {
+            let r, g, b;
+            if (s === 0) {
+                r = g = b = l; // achromatico
+            } else {
+                const hue2rgb = (p, q, t) => {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                };
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }
+            return [r, g, b];
+        }
+
+        const StyledPanel = ({ title, children, className, ...props }) => {
+            return (
+                <div className={`relative group ${className}`} style={{ backgroundColor: 'var(--bg-3)' }} {...props}>
+                    <div className="absolute inset-0 border-2 pointer-events-none transition-colors" style={{ borderColor: 'var(--bg-2)' }}></div>
+                    <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-main)' }}></div>
+                    <h2 className="absolute -top-3 left-4 px-2 text-xl font-medium" style={{ backgroundColor: 'var(--bg-3)', color: 'var(--text-2)' }}>
+                       <span className="transition-colors group-hover:text-[--accent-main]">{title}</span>
+                    </h2>
+                    <div className="p-6 pt-8">
+                        {children}
+                    </div>
+                </div>
+            );
+        };
+
+        const ToggleSwitch = ({ label, enabled, setEnabled }) => {
+            return (
+                <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-sm" style={{ color: 'var(--text-3)' }}>{label}</span>
+                    <div className="relative">
+                        <input type="checkbox" className="sr-only peer" checked={enabled} onChange={() => setEnabled(!enabled)} />
+                        <div className="block w-14 h-8 transition-colors" style={{ backgroundColor: enabled ? 'var(--accent-main)' : 'var(--bg-1)'}}></div>
+                        <div className="absolute left-1 top-1 w-6 h-6 flex items-center justify-center transition-transform peer-checked:translate-x-full" style={{ backgroundColor: 'var(--bg-4)'}}>
+                            <svg className={`w-4 h-4 ${enabled ? 'hidden' : 'block'}`} style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            <svg className={`w-5 h-5 ${enabled ? 'block' : 'hidden'}`} style={{ color: 'var(--accent-main)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </label>
+            );
+        };
+
+
+        // Componente Principale App
+        function App() {
+          const [colorParams, setColorParams] = useState([]);
+          const [originalFiles, setOriginalFiles] = useState({});
+          const [selectedParams, setSelectedParams] = useState(new Set());
+          const [masterColor, setMasterColor] = useState('#ffffff');
+          const [searchTerm, setSearchTerm] = useState('');
+          const [isDragging, setIsDragging] = useState(false);
+          const [saveStatus, setSaveStatus] = useState('');
+          
+          const [ignoreGrayscale, setIgnoreGrayscale] = useState(true);
+          const [preserveIntensity, setPreserveIntensity] = useState(true);
+          const [showGrayscale, setShowGrayscale] = useState(true);
+          const [hueShiftValue, setHueShiftValue] = useState(0);
+          
+          const [shuffleColors, setShuffleColors] = useState(['#ccffff', '#88eeee', '#66dddd']);
+          
+          const directoryHandleRef = useRef(null);
+
+          // Funzione ricorsiva per trovare i colori nei file DataTable
+          const findColorsRecursive = (properties, path, fileName, styleName, allParams) => {
+              if (!Array.isArray(properties)) return;
+
+              properties.forEach((prop, index) => {
+                  if (!prop || typeof prop !== 'object') return;
+                  const currentPath = [...path, index];
+
+                  if (prop.$type === "UAssetAPI.PropertyTypes.Structs.LinearColorPropertyData, UAssetAPI") {
+                      const paramName = `${styleName} - ${prop.Name}`;
+                      const rgba = prop.Value;
+                      const id = `${fileName}-${paramName}-${allParams.length}`;
+
+                      allParams.push({
+                          id,
+                          fileName,
+                          paramName,
+                          path: [...currentPath, 'Value'],
+                          rgba: {
+                              R: parseFloat(rgba.R) || 0,
+                              G: parseFloat(rgba.G) || 0,
+                              B: parseFloat(rgba.B) || 0,
+                              A: parseFloat(rgba.A) || 0,
+                          }
+                      });
+                  } else if (prop.Value && Array.isArray(prop.Value)) {
+                      findColorsRecursive(prop.Value, [...currentPath, 'Value'], fileName, styleName, allParams);
+                  }
+              });
+          };
+
+          const processFiles = (files, append = false) => {
+            if (files.length === 0) return;
+
+            let allParams = append ? [...colorParams] : [];
+            let newOriginalFiles = append ? {...originalFiles} : {};
+            let processedFilesCount = 0;
+            
+            const exactExclusionList = ['LinerColor_Offset&Softness', 'ColorMaskChannel', 'MaskColor_Enemy'];
+            const keywordExclusionList = ['offset', 'uv'];
+
+            files.forEach((file) => {
+              if (append && newOriginalFiles[file.name]) {
+                  processedFilesCount++;
+                  if (processedFilesCount === files.length) {
+                    setColorParams(allParams);
+                    setOriginalFiles(newOriginalFiles);
+                  }
+                  return;
+              }
+
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                try {
+                  const content = e.target.result;
+                  const json = JSON.parse(content);
+                  newOriginalFiles[file.name] = json;
+
+                  // TYPE 1: VFX File (formato originale)
+                  const vectorParamsArray = json?.Exports?.[0]?.Data?.find(p => p.Name === 'VectorParameterValues');
+                  if (vectorParamsArray && vectorParamsArray.Value) {
+                    vectorParamsArray.Value.forEach((param, paramIndex) => {
+                      const paramInfo = param?.Value?.find(p => p.Name === 'ParameterInfo');
+                      const paramName = paramInfo?.Value?.find(p => p.Name === 'Name')?.Value;
+
+                      if (paramName) {
+                        const paramNameLower = paramName.toLowerCase();
+                        const hasColor = paramNameLower.includes('color');
+                        const isExactlyExcluded = exactExclusionList.includes(paramName);
+                        const hasExcludedKeyword = keywordExclusionList.some(keyword => paramNameLower.includes(keyword));
+
+                        if (hasColor && !isExactlyExcluded && !hasExcludedKeyword) {
+                            const paramValueObj = param?.Value?.find(p => p.Name === 'ParameterValue');
+                            const linearColor = paramValueObj?.Value?.find(p => p.Name === 'ParameterValue')?.Value;
+
+                            if (linearColor) {
+                              const id = `${file.name}-${paramName}-${paramIndex}`;
+                              const path = [
+                                'Exports', 0, 'Data', 
+                                json.Exports[0].Data.findIndex(p => p.Name === 'VectorParameterValues'), 
+                                'Value', paramIndex, 'Value', 
+                                param.Value.findIndex(p => p.Name === 'ParameterValue'), 
+                                'Value', 0, 'Value'
+                              ];
+                              
+                              const sanitizedRgba = {
+                                  ...linearColor,
+                                  R: parseFloat(linearColor.R) || 0,
+                                  G: parseFloat(linearColor.G) || 0,
+                                  B: parseFloat(linearColor.B) || 0,
+                                  A: parseFloat(linearColor.A) || 0,
+                              };
+
+                              allParams.push({ id, fileName: file.name, paramName, path, rgba: sanitizedRgba });
+                            }
+                        }
+                      }
+                    });
+                  }
+                  // TYPE 2: DataTable con RichTextStyleRow (nuovo formato)
+                  else if (json?.Exports?.[0]?.$type === "UAssetAPI.ExportTypes.DataTableExport, UAssetAPI" && json.Exports[0].Table?.Data) {
+                      const tableData = json.Exports[0].Table.Data;
+                      const tablePath = ['Exports', 0, 'Table', 'Data'];
+
+                      tableData.forEach((row, rowIndex) => {
+                          if (row.StructType === "RichTextStyleRow") {
+                              const styleName = row.Name;
+                              const rowPath = [...tablePath, rowIndex, 'Value'];
+                              findColorsRecursive(row.Value, rowPath, file.name, styleName, allParams);
+                          }
+                      });
+                  }
+                } catch (error) {
+                  console.error("Error parsing JSON file:", file.name, error);
+                  alert(`Error reading file ${file.name}. Please ensure it is a valid JSON.`);
+                } finally {
+                  processedFilesCount++;
+                  if (processedFilesCount === files.length) {
+                    setColorParams(allParams);
+                    setOriginalFiles(newOriginalFiles);
+                  }
+                }
+              };
+              reader.readAsText(file);
+            });
+          };
+
+          const handleFileChange = (event) => {
+            const files = Array.from(event.target.files);
+            processFiles(files, colorParams.length > 0);
+          };
+          
+          const handleDragOver = (event) => {
+            event.preventDefault();
+            setIsDragging(true);
+          };
+
+          const handleDragLeave = (event) => {
+            event.preventDefault();
+            setIsDragging(false);
+          };
+
+          const handleDrop = (event) => {
+            event.preventDefault();
+            setIsDragging(false);
+            const files = Array.from(event.dataTransfer.files).filter(file => file.type === 'application/json' || file.name.endsWith('.json'));
+            processFiles(files, colorParams.length > 0);
+          };
+
+
+          const handleParamChange = (id, newRgba) => {
+            setColorParams(prevParams =>
+              prevParams.map(p => (p.id === id ? { ...p, rgba: newRgba } : p))
+            );
+          };
+
+          const handleSelectionChange = (id) => {
+            setSelectedParams(prevSelected => {
+              const newSelected = new Set(prevSelected);
+              if (newSelected.has(id)) {
+                newSelected.delete(id);
+              } else {
+                newSelected.add(id);
+              }
+              return newSelected;
+            });
+          };
+
+          const handleSelectAll = () => {
+            if (selectedParams.size === filteredParams.length) {
+              setSelectedParams(new Set());
+            } else {
+              setSelectedParams(new Set(filteredParams.map(p => p.id)));
+            }
+          };
+
+          const applyColor = (p, newColorRgba) => {
+            const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
+
+            if (ignoreGrayscale && isGrayscale) {
+                return p.rgba;
+            }
+
+            if (preserveIntensity) {
+                const originalIntensity = Math.max(p.rgba.R, p.rgba.G, p.rgba.B);
+                if (originalIntensity === 0) return { ...p.rgba, R: 0, G: 0, B: 0 };
+
+                const maxNew = Math.max(newColorRgba.r, newColorRgba.g, newColorRgba.b);
+                if (maxNew === 0) return { ...p.rgba, R: 0, G: 0, B: 0 };
+
+                const normalizedNewR = newColorRgba.r / maxNew;
+                const normalizedNewG = newColorRgba.g / maxNew;
+                const normalizedNewB = newColorRgba.b / maxNew;
+
+                return {
+                    ...p.rgba,
+                    R: normalizedNewR * originalIntensity,
+                    G: normalizedNewG * originalIntensity,
+                    B: normalizedNewB * originalIntensity,
+                };
+            } else {
+                return { ...p.rgba, R: newColorRgba.r, G: newColorRgba.g, B: newColorRgba.b };
+            }
+          };
+
+          const applyMasterColor = () => {
+            if (selectedParams.size === 0) {
+                alert("No parameters selected. Please select at least one parameter before applying the master color.");
+                return;
+            }
+            const newRgba = hexToRgba(masterColor);
+            setColorParams(prevParams =>
+              prevParams.map(p => {
+                if (selectedParams.has(p.id)) {
+                    return { ...p, rgba: applyColor(p, newRgba) };
+                }
+                return p;
+              })
+            );
+          };
+          
+          const applyHueShift = () => {
+            if (selectedParams.size === 0) {
+                alert("No parameters selected. Please select at least one parameter before applying the hue shift.");
+                return;
+            }
+
+            setColorParams(prevParams =>
+              prevParams.map(p => {
+                if (selectedParams.has(p.id)) {
+                    const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
+                    if (ignoreGrayscale && isGrayscale) return p;
+
+                    const originalIntensity = Math.max(p.rgba.R, p.rgba.G, p.rgba.B);
+                    const [h, s, l] = rgbToHsl(p.rgba.R, p.rgba.G, p.rgba.B);
+                    
+                    let newHue = h + (hueShiftValue / 360);
+                    if (newHue < 0) newHue += 1;
+                    if (newHue > 1) newHue -= 1;
+                    
+                    const [r, g, b] = hslToRgb(newHue, s, l);
+
+                    return { ...p, rgba: { ...p.rgba, R: r * originalIntensity, G: g * originalIntensity, B: b * originalIntensity } };
+                }
+                return p;
+              })
+            );
+            
+            setHueShiftValue(0);
+          };
+          
+          const applyShuffle = () => {
+            if (selectedParams.size === 0) {
+                alert("No parameters selected. Please select at least one parameter before applying shuffle.");
+                return;
+            }
+
+            const selectedFiles = [...new Set(colorParams.filter(p => selectedParams.has(p.id)).map(p => p.fileName))];
+            const fileToColorMap = {};
+            selectedFiles.forEach((fileName, index) => {
+                fileToColorMap[fileName] = shuffleColors[index % shuffleColors.length];
+            });
+
+            setColorParams(prevParams =>
+              prevParams.map(p => {
+                if (selectedParams.has(p.id)) {
+                    const newColorHex = fileToColorMap[p.fileName];
+                    if (newColorHex) {
+                        const newRgba = hexToRgba(newColorHex);
+                        return { ...p, rgba: applyColor(p, newRgba) };
+                    }
+                }
+                return p;
+              })
+            );
+          };
+          
+          const handleShuffleColorChange = (index, color) => {
+            const newShuffleColors = [...shuffleColors];
+            newShuffleColors[index] = color;
+            setShuffleColors(newShuffleColors);
+          };
+
+
+          const handleSave = async () => {
+            if (colorParams.length === 0) {
+                alert("No parameters to save.");
+                return;
+            }
+            
+            setSaveStatus('Saving...');
+
+            const modifiedFiles = JSON.parse(JSON.stringify(originalFiles));
+            colorParams.forEach(param => {
+              const fileToModify = modifiedFiles[param.fileName];
+              if(fileToModify) {
+                setNestedValue(fileToModify, param.path, param.rgba);
+              }
+            });
+            
+            const filesToSave = new Set(colorParams.map(p => p.fileName));
+
+            // Controlla se l'API File System Access è supportata
+            if ('showDirectoryPicker' in window) {
+                try {
+                    let dirHandle = directoryHandleRef.current;
+                    if (!dirHandle) {
+                        dirHandle = await window.showDirectoryPicker();
+                        directoryHandleRef.current = dirHandle;
+                    }
+                    const outputDirHandle = await dirHandle.getDirectoryHandle('output', { create: true });
+
+                    const savePromises = Array.from(filesToSave).map(async (fileName) => {
+                        const fileHandle = await outputDirHandle.getFileHandle(fileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        const content = JSON.stringify(modifiedFiles[fileName], null, 2);
+                        await writable.write(content);
+                        await writable.close();
+                    });
+
+                    await Promise.all(savePromises);
+                    setSaveStatus(`All ${filesToSave.size} files saved to 'output' folder!`);
+                } catch (err) {
+                    console.error("Error saving files with File System Access API:", err);
+                    if (err.name !== 'AbortError') {
+                       setSaveStatus(`Error: ${err.message}.`);
+                    } else {
+                       setSaveStatus('Save cancelled.');
+                    }
+                }
+            } else {
+                // Fallback per browser non supportati (Firefox, Brave, etc.)
+                setSaveStatus(`Downloading ${filesToSave.size} files...`);
+                Array.from(filesToSave).forEach((fileName, index) => {
+                    setTimeout(() => {
+                        const content = JSON.stringify(modifiedFiles[fileName], null, 2);
+                        const blob = new Blob([content], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = fileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        if(index === filesToSave.size - 1) {
+                            setSaveStatus('All files downloaded!');
+                        }
+                    }, index * 300); // Aggiunge un piccolo ritardo tra i download
+                });
+            }
+
+            setTimeout(() => setSaveStatus(''), 5000);
+          };
+
+          const filteredParams = useMemo(() => {
+            let params = colorParams;
+
+            if (!showGrayscale) {
+                params = params.filter(p => p.rgba.R !== p.rgba.G || p.rgba.G !== p.rgba.B);
+            }
+
+            if (searchTerm) {
+                params = params.filter(p => 
+                  p.paramName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  p.fileName.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+            }
+            
+            return params;
+          }, [colorParams, searchTerm, showGrayscale]);
+
+          return (
+            <div style={{ backgroundColor: 'var(--bg-4)', color: 'var(--text-3)' }} className="min-h-screen p-6">
+              <div className="w-full">
+                <div className="relative group p-4 border-2 particle-header" style={{ borderColor: 'var(--bg-2)'}}>
+                    <Particles />
+                    <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-main)', zIndex: 2 }}></div>
+                    <div className="flex items-center gap-4 relative" style={{ zIndex: 1 }}>
+                        <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className="h-24 filter brightness-0 invert" />
+                        <h1 className="text-5xl font-bold" style={{ color: 'var(--text-1)' }}>Rivals VFX Editor</h1>
+                    </div>
+                    <span className="absolute bottom-2 right-4 text-xs" style={{ color: 'var(--text-4)', zIndex: 1 }}>
+                        by Saturn
+                    </span>
+                </div>
+                
+                <div className="my-8">
+                    {colorParams.length > 0 ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-10 gap-8">
+                            <div className="lg:col-span-3">
+                                <StyledPanel title="Global Controls">
+                                    <div className="flex flex-col space-y-6">
+                                        <div className="space-y-2">
+                                            <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Fixed Color</h3>
+                                            <div className="flex items-center space-x-4">
+                                                <input type="color" value={masterColor} onChange={e => setMasterColor(e.target.value)} className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}/>
+                                                <button onClick={applyMasterColor} className="flex-grow px-4 py-3 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
+                                                    Apply Fixed Color
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
+                                             <div className="flex justify-between items-center">
+                                                <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Hue Shift</h3>
+                                                <span className="font-mono text-lg" style={{ color: 'var(--text-3)' }}>{hueShiftValue}°</span>
+                                             </div>
+                                             <div>
+                                                <input id="hue-shift" type="range" min="-180" max="180" value={hueShiftValue} 
+                                                    onChange={(e) => setHueShiftValue(parseInt(e.target.value))}
+                                                    onDoubleClick={() => setHueShiftValue(0)}
+                                                    className="w-full h-2 rounded-none appearance-none cursor-pointer" />
+                                            </div>
+                                            <button onClick={applyHueShift} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
+                                                Apply Hue Shift
+                                            </button>
+                                        </div>
+                                        <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
+                                             <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Color Shuffle</h3>
+                                             <div className="flex justify-around items-center">
+                                                {shuffleColors.map((color, index) => (
+                                                    <input key={index} type="color" value={color} onChange={(e) => handleShuffleColorChange(index, e.target.value)} className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}/>
+                                                ))}
+                                             </div>
+                                             <button onClick={applyShuffle} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
+                                                Apply Shuffle
+                                            </button>
+                                        </div>
+                                        <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
+                                            <ToggleSwitch label="Preserve Intensity" enabled={preserveIntensity} setEnabled={setPreserveIntensity} />
+                                            <ToggleSwitch label="Ignore Grayscale (R=G=B)" enabled={ignoreGrayscale} setEnabled={setIgnoreGrayscale} />
+                                        </div>
+                                    </div>
+                                </StyledPanel>
+                            </div>
+                            <div className="lg:col-span-7">
+                              <StyledPanel title="Parameters" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+                                <div className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
+                                    <p className="text-sm" style={{ color: 'var(--text-4)' }}>{filteredParams.length} color parameters found.</p>
+                                    <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-4 items-center">
+                                        <label className="flex items-center text-sm cursor-pointer" style={{ color: 'var(--text-3)' }}>
+                                            <input type="checkbox" checked={showGrayscale} onChange={() => setShowGrayscale(!showGrayscale)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
+                                            Show Grayscale
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Filter by name..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full sm:w-64 px-3 py-2 rounded-none focus:outline-none focus:ring-2"
+                                            style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
+                                        />
+                                        <div className="flex items-center gap-2">
+                                            {saveStatus && <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-4)' }}>{saveStatus}</span>}
+                                            <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path>
+                                                </svg>
+                                                Save Files
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
+
+                                  <table className="w-full text-sm text-left">
+                                    <thead style={{ color: 'var(--text-4)' }}>
+                                      <tr style={{ borderBottom: '2px solid var(--bg-2)' }}>
+                                        <th scope="col" className="p-4">
+                                          <input type="checkbox" onChange={handleSelectAll} checked={filteredParams.length > 0 && selectedParams.size === filteredParams.length} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
+                                        </th>
+                                        <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">File</th>
+                                        <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Parameter Name</th>
+                                        <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Color</th>
+                                        <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">R</th>
+                                        <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">G</th>
+                                        <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">B</th>
+                                        <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">A</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {filteredParams.map(p => {
+                                        let displayRgba = p.rgba;
+                                        let isPreviewing = false;
+
+                                        if (selectedParams.has(p.id) && hueShiftValue !== 0) {
+                                            const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
+                                            if (! (ignoreGrayscale && isGrayscale) ) {
+                                                isPreviewing = true;
+                                                const originalIntensity = Math.max(p.rgba.R, p.rgba.G, p.rgba.B);
+                                                const [h, s, l] = rgbToHsl(p.rgba.R, p.rgba.G, p.rgba.B);
+                                                let newHue = h + (hueShiftValue / 360);
+                                                if (newHue < 0) newHue += 1;
+                                                if (newHue > 1) newHue -= 1;
+                                                const [r, g, b] = hslToRgb(newHue, s, l);
+                                                displayRgba = { ...p.rgba, R: r * originalIntensity, G: g * originalIntensity, B: b * originalIntensity };
+                                            }
+                                        }
+                                        
+                                        const displayHexColor = rgbaToDisplayHex(displayRgba.R, displayRgba.G, displayRgba.B);
+
+                                        return (
+                                          <tr key={p.id} className="hover:bg-opacity-50" style={{ borderBottom: '1px solid var(--bg-2)', backgroundColor: isPreviewing ? 'rgba(204, 255, 255, 0.05)' : 'transparent' }}>
+                                            <td className="w-4 p-4">
+                                              <input type="checkbox" checked={selectedParams.has(p.id)} onChange={() => handleSelectionChange(p.id)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
+                                            </td>
+                                            <td className="px-6 py-4 font-medium whitespace-nowrap" style={{ color: 'var(--text-2)' }}>{p.fileName}</td>
+                                            <td className="px-6 py-4">{p.paramName}</td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <input 
+                                                        type="color" 
+                                                        value={displayHexColor}
+                                                        onChange={(e) => {
+                                                            const newRgb = hexToRgba(e.target.value);
+                                                            handleParamChange(p.id, {...p.rgba, ...newRgb});
+                                                        }}
+                                                        className="w-8 h-8 p-0 border-2 cursor-pointer"
+                                                        style={{ backgroundColor: 'transparent', borderColor: 'var(--bg-1)' }}
+                                                    />
+                                                   <span className="font-mono">{displayHexColor.toUpperCase()}</span>
+                                                </div>
+                                            </td>
+                                            {['R', 'G', 'B', 'A'].map(channel => (
+                                              <td key={channel} className="px-2 py-2">
+                                                <input
+                                                  type="number"
+                                                  step="0.01"
+                                                  value={(Number(p.rgba[channel]) || 0).toFixed(4)}
+                                                  onChange={(e) => handleParamChange(p.id, { ...p.rgba, [channel]: parseFloat(e.target.value) || 0 })}
+                                                  className="w-24 px-2 py-1 rounded-none text-center focus:outline-none focus:ring-2"
+                                                  style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
+                                                />
+                                              </td>
+                                            ))}
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </StyledPanel>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="my-8">
+                            <StyledPanel title="Load Files">
+                                <div 
+                                    className={`text-center py-20 px-6 border-2 border-dashed transition-colors`}
+                                    style={{ backgroundColor: 'var(--bg-2)', borderColor: isDragging ? 'var(--accent-main)' : 'var(--bg-1)' }}
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={handleDrop}
+                                >
+                                    <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                                        <svg className="mx-auto h-12 w-12" style={{ color: 'var(--text-4)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                            <polyline points="14 2 14 8 20 8"></polyline>
+                                            <path d="M9 15.5a1.5 1.5 0 0 0-3 0v1a1.5 1.5 0 0 0 3 0"></path>
+                                            <path d="M18 15.5a1.5 1.5 0 0 0-3 0v1a1.5 1.5 0 0 0 3 0"></path>
+                                        </svg>
+                                        <h3 className="mt-2 text-lg font-medium" style={{ color: 'var(--text-2)' }}>No files loaded</h3>
+                                        <p className="mt-1 text-sm" style={{ color: 'var(--text-4)' }}>Drag and drop .json files or click here to begin.</p>
+                                        <input type='file' className="hidden" multiple accept=".json" onChange={handleFileChange} />
+                                    </label>
+                                </div>
+                            </StyledPanel>
+                        </div>
+                    )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // Monta il componente App nel DOM
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+
+    </script>
+    <!-- Script per mostrare la finestra di Tauri dopo il caricamento -->
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        if (window.__TAURI__) {
+          window.__TAURI__.window.appWindow.show();
+        }
+      });
+    </script>
+</body>
+</html>
