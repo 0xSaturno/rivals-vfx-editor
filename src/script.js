@@ -1,21 +1,19 @@
-// Il codice React dell'applicazione inizia qui
-
 const { useState, useCallback, useMemo, useRef, useEffect } = React;
 
-// Componente per le particelle
+// component that makes all the little star particles for the header
 const Particles = () => {
     const particles = useMemo(() => {
         const particleArray = [];
-        const numParticles = 200; // Aumentato il numero di stelle
+        const numParticles = 200; //  stars amount!
         for (let i = 0; i < numParticles; i++) {
-            const size = Math.random() * 2.5 + 0.5; // Dimensioni da 0.5 a 3px
-            const duration = 5 + Math.random() * 10; // Durata più breve per maggiore velocità (da 5 a 15s)
+            const size = Math.random() * 2.5 + 0.5; 
+            const duration = 5 + Math.random() * 10; // shorter duration = faster particles
             const style = {
                 width: `${size}px`,
                 height: `${size}px`,
                 left: `${Math.random() * 100}%`,
                 top: `${Math.random() * 100}%`,
-                animationDelay: `-${Math.random() * duration}s`, // Ritardo negativo per avvio immediato e casuale
+                animationDelay: `-${Math.random() * duration}s`, // negative delay makes them start at random points in the animation, no delay
                 animationDuration: `${duration}s`, 
             };
             particleArray.push(<div key={i} className="particle" style={style}></div>);
@@ -27,7 +25,7 @@ const Particles = () => {
 };
 
 
-// Funzione di utilità per impostare un valore in un oggetto annidato
+// helper function to dive into a nested object and change a value.
 const setNestedValue = (obj, path, value) => {
   let schema = obj;
   for (let i = 0; i < path.length - 1; i++) {
@@ -75,7 +73,7 @@ function rgbToHsl(r, g, b) {
     let h, s, l = (max + min) / 2;
 
     if (max === min) {
-        h = s = 0; // achromatico
+        h = s = 0; // achromatic
     } else {
         const d = max - min;
         s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
@@ -92,7 +90,7 @@ function rgbToHsl(r, g, b) {
 function hslToRgb(h, s, l) {
     let r, g, b;
     if (s === 0) {
-        r = g = b = l; // achromatico
+        r = g = b = l; // achromatic
     } else {
         const hue2rgb = (p, q, t) => {
             if (t < 0) t += 1;
@@ -133,7 +131,11 @@ const ToggleSwitch = ({ label, enabled, setEnabled }) => {
             <div className="relative">
                 <input type="checkbox" className="sr-only peer" checked={enabled} onChange={() => setEnabled(!enabled)} />
                 <div className="block w-14 h-8 transition-colors" style={{ backgroundColor: enabled ? 'var(--accent-main)' : 'var(--bg-1)'}}></div>
-                <div className="absolute left-1 top-1 w-6 h-6 flex items-center justify-center transition-transform peer-checked:translate-x-full" style={{ backgroundColor: 'var(--bg-4)'}}>
+                <div className="absolute left-1 top-1 w-6 h-6 flex items-center justify-center transition-transform peer-checked:translate-x-full" 
+                    style={{ 
+                        backgroundColor: 'var(--bg-4)',
+                        transform: enabled ? 'translateX(1.5rem)' : 'translateX(0)'
+                    }}>
                     <svg className={`w-4 h-4 ${enabled ? 'hidden' : 'block'}`} style={{ color: 'var(--text-4)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
@@ -147,7 +149,7 @@ const ToggleSwitch = ({ label, enabled, setEnabled }) => {
 };
 
 
-// Componente Principale App
+// MAIN APP COMPONENT
 function App() {
   const [colorParams, setColorParams] = useState([]);
   const [originalFiles, setOriginalFiles] = useState({});
@@ -166,131 +168,98 @@ function App() {
   
   const directoryHandleRef = useRef(null);
 
-  // Funzione ricorsiva per trovare i colori nei file DataTable
-  const findColorsRecursive = (properties, path, fileName, styleName, allParams) => {
-      if (!Array.isArray(properties)) return;
+  const [folders, setFolders] = useState([]);
+  const [selectedFolders, setSelectedFolders] = useState(new Set());
 
-      properties.forEach((prop, index) => {
-          if (!prop || typeof prop !== 'object') return;
-          const currentPath = [...path, index];
 
-          if (prop.$type === "UAssetAPI.PropertyTypes.Structs.LinearColorPropertyData, UAssetAPI") {
-              const paramName = `${styleName} - ${prop.Name}`;
-              const rgba = prop.Value;
-              const id = `${fileName}-${paramName}-${allParams.length}`;
+  // JSON format spider to find color parameters
+  const parseJsonAndExtractColors = (json, fileName, relativePath, allParams) => {
+        // FORMAT TYPE 1: VFX Material File (original format)
+      const vectorParamsArray = json?.Exports?.[0]?.Data?.find(p => p.Name === 'VectorParameterValues');
+      if (vectorParamsArray && vectorParamsArray.Value) {
+        vectorParamsArray.Value.forEach((param, paramIndex) => {
+          const paramInfo = param?.Value?.find(p => p.Name === 'ParameterInfo');
+          const paramName = paramInfo?.Value?.find(p => p.Name === 'Name')?.Value;
 
-              allParams.push({
-                  id,
-                  fileName,
-                  paramName,
-                  path: [...currentPath, 'Value'],
-                  rgba: {
-                      R: parseFloat(rgba.R) || 0,
-                      G: parseFloat(rgba.G) || 0,
-                      B: parseFloat(rgba.B) || 0,
-                      A: parseFloat(rgba.A) || 0,
-                  }
-              });
-          } else if (prop.Value && Array.isArray(prop.Value)) {
-              findColorsRecursive(prop.Value, [...currentPath, 'Value'], fileName, styleName, allParams);
+          if (paramName) {
+            const paramNameLower = paramName.toLowerCase();
+            const hasColorOrTint = paramNameLower.includes('color') || paramNameLower.includes('tint');
+            const exactExclusionList = ['LinerColor_Offset&Softness', 'ColorMaskChannel', 'MaskColor_Enemy'];
+            const keywordExclusionList = ['offset', 'uv'];
+            const isExactlyExcluded = exactExclusionList.includes(paramName);
+            const hasExcludedKeyword = keywordExclusionList.some(keyword => paramNameLower.includes(keyword));
+
+            if (hasColorOrTint && !isExactlyExcluded && !hasExcludedKeyword) {
+                const paramValueObj = param?.Value?.find(p => p.Name === 'ParameterValue');
+                const linearColor = paramValueObj?.Value?.find(p => p.Name === 'ParameterValue')?.Value;
+
+                if (linearColor) {
+                  const id = `${relativePath}-${paramName}-${paramIndex}`;
+                  const path = [
+                    'Exports', 0, 'Data', 
+                    json.Exports[0].Data.findIndex(p => p.Name === 'VectorParameterValues'), 
+                    'Value', paramIndex, 'Value', 
+                    param.Value.findIndex(p => p.Name === 'ParameterValue'), 
+                    'Value', 0, 'Value'
+                  ];
+                  
+                  const sanitizedRgba = {
+                      ...linearColor,
+                      R: parseFloat(linearColor.R) || 0,
+                      G: parseFloat(linearColor.G) || 0,
+                      B: parseFloat(linearColor.B) || 0,
+                      A: parseFloat(linearColor.A) || 0,
+                  };
+
+                  allParams.push({ id, fileName, paramName, path, rgba: sanitizedRgba, relativePath });
+                }
+            }
+          }
+        });
+      }
+      // FORMAT TYPE 2: RichText blueprints support
+      else if (json?.Exports?.[0]?.$type === "UAssetAPI.ExportTypes.DataTableExport, UAssetAPI" && json.Exports[0].Table?.Data) {
+          const tableData = json.Exports[0].Table.Data;
+          const tablePath = ['Exports', 0, 'Table', 'Data'];
+
+          tableData.forEach((row, rowIndex) => {
+              if (row.StructType === "RichTextStyleRow") {
+                  const styleName = row.Name;
+                  const rowPath = [...tablePath, rowIndex, 'Value'];
+                  findColorsRecursive(row.Value, rowPath, fileName, styleName, allParams, relativePath);
+              }
+          });
+      }
+  }
+
+  const processFileObjects = (fileObjects, append = false) => {
+      let allParams = append ? [...colorParams] : [];
+      let newOriginalFiles = append ? {...originalFiles} : {};
+
+      fileObjects.forEach(fileObj => {
+          if (append && newOriginalFiles[fileObj.relativePath]) {
+              return;
+          }
+          try {
+              const json = JSON.parse(fileObj.content);
+              newOriginalFiles[fileObj.relativePath] = json;
+              parseJsonAndExtractColors(json, fileObj.name, fileObj.relativePath, allParams);
+          } catch (error) {
+              console.error("Error processing file content:", fileObj.name, error);
+              alert(`Error processing file ${fileObj.name}.`);
           }
       });
-  };
 
-  const processFiles = (files, append = false) => {
-    if (files.length === 0) return;
+      //  Extract folder list for filtering UI
+      const uniqueFolders = [...new Set(allParams.map(p => {
+          const lastSlash = p.relativePath.lastIndexOf('/');
+          return lastSlash > 0 ? p.relativePath.substring(0, lastSlash) : '/'; // root folder
+      }))];
+      setFolders(uniqueFolders.sort());
+      setSelectedFolders(new Set(uniqueFolders)); // Select all by default
 
-    let allParams = append ? [...colorParams] : [];
-    let newOriginalFiles = append ? {...originalFiles} : {};
-    let processedFilesCount = 0;
-    
-    const exactExclusionList = ['LinerColor_Offset&Softness', 'ColorMaskChannel', 'MaskColor_Enemy'];
-    const keywordExclusionList = ['offset', 'uv'];
-
-    files.forEach((file) => {
-      if (append && newOriginalFiles[file.name]) {
-          processedFilesCount++;
-          if (processedFilesCount === files.length) {
-            setColorParams(allParams);
-            setOriginalFiles(newOriginalFiles);
-          }
-          return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const content = e.target.result;
-          const json = JSON.parse(content);
-          newOriginalFiles[file.name] = json;
-
-          // TYPE 1: VFX File (formato originale)
-          const vectorParamsArray = json?.Exports?.[0]?.Data?.find(p => p.Name === 'VectorParameterValues');
-          if (vectorParamsArray && vectorParamsArray.Value) {
-            vectorParamsArray.Value.forEach((param, paramIndex) => {
-              const paramInfo = param?.Value?.find(p => p.Name === 'ParameterInfo');
-              const paramName = paramInfo?.Value?.find(p => p.Name === 'Name')?.Value;
-
-              if (paramName) {
-                const paramNameLower = paramName.toLowerCase();
-                const hasColor = paramNameLower.includes('color');
-                const isExactlyExcluded = exactExclusionList.includes(paramName);
-                const hasExcludedKeyword = keywordExclusionList.some(keyword => paramNameLower.includes(keyword));
-
-                if (hasColor && !isExactlyExcluded && !hasExcludedKeyword) {
-                    const paramValueObj = param?.Value?.find(p => p.Name === 'ParameterValue');
-                    const linearColor = paramValueObj?.Value?.find(p => p.Name === 'ParameterValue')?.Value;
-
-                    if (linearColor) {
-                      const id = `${file.name}-${paramName}-${paramIndex}`;
-                      const path = [
-                        'Exports', 0, 'Data', 
-                        json.Exports[0].Data.findIndex(p => p.Name === 'VectorParameterValues'), 
-                        'Value', paramIndex, 'Value', 
-                        param.Value.findIndex(p => p.Name === 'ParameterValue'), 
-                        'Value', 0, 'Value'
-                      ];
-                      
-                      const sanitizedRgba = {
-                          ...linearColor,
-                          R: parseFloat(linearColor.R) || 0,
-                          G: parseFloat(linearColor.G) || 0,
-                          B: parseFloat(linearColor.B) || 0,
-                          A: parseFloat(linearColor.A) || 0,
-                      };
-
-                      allParams.push({ id, fileName: file.name, paramName, path, rgba: sanitizedRgba });
-                    }
-                }
-              }
-            });
-          }
-          // TYPE 2: DataTable con RichTextStyleRow (nuovo formato)
-          else if (json?.Exports?.[0]?.$type === "UAssetAPI.ExportTypes.DataTableExport, UAssetAPI" && json.Exports[0].Table?.Data) {
-              const tableData = json.Exports[0].Table.Data;
-              const tablePath = ['Exports', 0, 'Table', 'Data'];
-
-              tableData.forEach((row, rowIndex) => {
-                  if (row.StructType === "RichTextStyleRow") {
-                      const styleName = row.Name;
-                      const rowPath = [...tablePath, rowIndex, 'Value'];
-                      findColorsRecursive(row.Value, rowPath, file.name, styleName, allParams);
-                  }
-              });
-          }
-        } catch (error) {
-          console.error("Error parsing JSON file:", file.name, error);
-          alert(`Error reading file ${file.name}. Please ensure it is a valid JSON.`);
-        } finally {
-          processedFilesCount++;
-          if (processedFilesCount === files.length) {
-            setColorParams(allParams);
-            setOriginalFiles(newOriginalFiles);
-          }
-        }
-      };
-      reader.readAsText(file);
-    });
+      setColorParams(allParams);
+      setOriginalFiles(newOriginalFiles);
   };
 
   const handleFileChange = (event) => {
@@ -298,6 +267,41 @@ function App() {
     processFiles(files, colorParams.length > 0);
   };
   
+const traverseFileTree = async (item, path, fileObjects) => {
+      path = path || "";
+      if (item.isFile) {
+          return new Promise(resolve => {
+              item.file(file => {
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                      if (file.name.endsWith('.json')) {
+                          fileObjects.push({ 
+                              name: file.name, 
+                              content: e.target.result,
+                              relativePath: path ? `${path}/${file.name}` : file.name
+                          });
+                      }
+                      resolve();
+                  };
+                  reader.readAsText(file);
+              });
+          });
+      } else if (item.isDirectory) {
+          const dirReader = item.createReader();
+          // This loop fixes the WebEngine readEntries limitation of 100 max entries
+          let allEntries = [];
+          let currentEntries = await new Promise(resolve => dirReader.readEntries(resolve));
+          while (currentEntries.length > 0) {
+              allEntries = allEntries.concat(currentEntries);
+              currentEntries = await new Promise(resolve => dirReader.readEntries(resolve));
+          }
+          
+          for (let i = 0; i < allEntries.length; i++) {
+              await traverseFileTree(allEntries[i], path ? `${path}/${item.name}` : item.name, fileObjects);
+          }
+      }
+  };
+
   const handleDragOver = (event) => {
     event.preventDefault();
     setIsDragging(true);
@@ -308,11 +312,22 @@ function App() {
     setIsDragging(false);
   };
 
-  const handleDrop = (event) => {
+  const handleDrop = async (event) => {
     event.preventDefault();
     setIsDragging(false);
-    const files = Array.from(event.dataTransfer.files).filter(file => file.type === 'application/json' || file.name.endsWith('.json'));
-    processFiles(files, colorParams.length > 0);
+    
+    const fileObjects = [];
+    if (event.dataTransfer.items) {
+        const promises = [];
+        for (let i = 0; i < event.dataTransfer.items.length; i++) {
+            const item = event.dataTransfer.items[i].webkitGetAsEntry();
+            if (item) {
+                promises.push(traverseFileTree(item, "", fileObjects));
+            }
+        }
+        await Promise.all(promises);
+        processFileObjects(fileObjects, colorParams.length > 0);
+    }
   };
 
 
@@ -450,7 +465,7 @@ function App() {
   };
 
 
-  const handleSave = async () => {
+const handleSave = async () => {
     if (colorParams.length === 0) {
         alert("No parameters to save.");
         return;
@@ -460,69 +475,78 @@ function App() {
 
     const modifiedFiles = JSON.parse(JSON.stringify(originalFiles));
     colorParams.forEach(param => {
-      const fileToModify = modifiedFiles[param.fileName];
+      // Use relativePath to get the right path
+      const fileToModify = modifiedFiles[param.relativePath]; 
       if(fileToModify) {
         setNestedValue(fileToModify, param.path, param.rgba);
       }
     });
     
-    const filesToSave = new Set(colorParams.map(p => p.fileName));
+    const filesToSave = new Set(Object.keys(modifiedFiles));
 
-    // Controlla se l'API File System Access è supportata
-    if ('showDirectoryPicker' in window) {
-        try {
-            let dirHandle = directoryHandleRef.current;
-            if (!dirHandle) {
-                dirHandle = await window.showDirectoryPicker();
-                directoryHandleRef.current = dirHandle;
-            }
-            const outputDirHandle = await dirHandle.getDirectoryHandle('output', { create: true });
-
-            const savePromises = Array.from(filesToSave).map(async (fileName) => {
-                const fileHandle = await outputDirHandle.getFileHandle(fileName, { create: true });
-                const writable = await fileHandle.createWritable();
-                const content = JSON.stringify(modifiedFiles[fileName], null, 2);
-                await writable.write(content);
-                await writable.close();
-            });
-
-            await Promise.all(savePromises);
-            setSaveStatus(`All ${filesToSave.size} files saved to 'output' folder!`);
-        } catch (err) {
-            console.error("Error saving files with File System Access API:", err);
-            if (err.name !== 'AbortError') {
-               setSaveStatus(`Error: ${err.message}.`);
-            } else {
-               setSaveStatus('Save cancelled.');
-            }
+    try {
+        let dirHandle = directoryHandleRef.current;
+        // Asks for save path only one time
+        if (!dirHandle) {
+            dirHandle = await window.showDirectoryPicker();
+            directoryHandleRef.current = dirHandle;
         }
-    } else {
-        // Fallback per browser non supportati (Firefox, Brave, etc.)
-        setSaveStatus(`Downloading ${filesToSave.size} files...`);
-        Array.from(filesToSave).forEach((fileName, index) => {
-            setTimeout(() => {
-                const content = JSON.stringify(modifiedFiles[fileName], null, 2);
-                const blob = new Blob([content], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                if(index === filesToSave.size - 1) {
-                    setSaveStatus('All files downloaded!');
-                }
-            }, index * 300); // Aggiunge un piccolo ritardo tra i download
-        });
+        const outputDirHandle = await dirHandle.getDirectoryHandle('output', { create: true });
+
+        for (const relativePath of filesToSave) {
+            const pathParts = relativePath.split('/');
+            const fileName = pathParts.pop(); // Gets file name
+            let currentDirHandle = outputDirHandle;
+
+            // Make every subfolder needed
+            for (const part of pathParts) {
+                currentDirHandle = await currentDirHandle.getDirectoryHandle(part, { create: true });
+            }
+
+            // Write new files to the right folder
+            const fileHandle = await currentDirHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(JSON.stringify(modifiedFiles[relativePath], null, 2));
+            await writable.close();
+        }
+        
+        setSaveStatus(`All ${filesToSave.size} files saved to 'output' folder!`);
+
+    } catch (err) {
+        console.error("Error saving files:", err);
+        if (err.name !== 'AbortError') {
+           setSaveStatus(`Error: ${err.message}.`);
+        } else {
+           setSaveStatus('Save cancelled.');
+        }
     }
 
-    setTimeout(() => setSaveStatus(''), 5000);
+    setTimeout(() => setSaveStatus(''), 10000);
   };
 
+  const handleFolderToggle = (folder) => {
+      setSelectedFolders(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(folder)) {
+              newSet.delete(folder);
+          } else {
+              newSet.add(folder);
+          }
+          return newSet;
+      });
+  };
+  
   const filteredParams = useMemo(() => {
     let params = colorParams;
+
+    // Filter by selected folders
+    if (folders.length > 0) {
+        params = params.filter(p => {
+            const lastSlash = p.relativePath.lastIndexOf('/');
+            const folder = lastSlash > 0 ? p.relativePath.substring(0, lastSlash) : '/';
+            return selectedFolders.has(folder);
+        });
+    }
 
     if (!showGrayscale) {
         params = params.filter(p => p.rgba.R !== p.rgba.G || p.rgba.G !== p.rgba.B);
@@ -536,7 +560,7 @@ function App() {
     }
     
     return params;
-  }, [colorParams, searchTerm, showGrayscale]);
+  }, [colorParams, searchTerm, showGrayscale, selectedFolders, folders]);
 
   return (
     <div style={{ backgroundColor: 'var(--bg-4)', color: 'var(--text-3)' }} className="min-h-screen p-6">
@@ -595,41 +619,62 @@ function App() {
                                     </button>
                                 </div>
                                 <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
-                                    <ToggleSwitch label="Preserve Intensity" enabled={preserveIntensity} setEnabled={setPreserveIntensity} />
+                                    <ToggleSwitch label="Preserve Intensity (Recommended)" enabled={preserveIntensity} setEnabled={setPreserveIntensity} />
                                     <ToggleSwitch label="Ignore Grayscale (R=G=B)" enabled={ignoreGrayscale} setEnabled={setIgnoreGrayscale} />
                                 </div>
                             </div>
                         </StyledPanel>
                     </div>
+                    
                     <div className="lg:col-span-7">
                       <StyledPanel title="Parameters" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
-                        <div className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
-                            <p className="text-sm" style={{ color: 'var(--text-4)' }}>{filteredParams.length} color parameters found.</p>
-                            <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-4 items-center">
-                                <label className="flex items-center text-sm cursor-pointer" style={{ color: 'var(--text-3)' }}>
-                                    <input type="checkbox" checked={showGrayscale} onChange={() => setShowGrayscale(!showGrayscale)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
-                                    Show Grayscale
-                                </label>
-                                <input 
-                                    type="text" 
-                                    placeholder="Filter by name..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full sm:w-64 px-3 py-2 rounded-none focus:outline-none focus:ring-2"
-                                    style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
-                                />
-                                <div className="flex items-center gap-2">
-                                    {saveStatus && <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-4)' }}>{saveStatus}</span>}
-                                    <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path>
-                                        </svg>
-                                        Save Files
-                                    </button>
+                        <div className="p-4 flex flex-col gap-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
+                            <div className="flex justify-between items-center w-full gap-4">
+                                {/* Left group: folder filters */}
+                                <div className="flex-grow">
+                                    {folders.length > 1 && (
+                                        <div>
+                                            <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--text-3)' }}>Filter by Folder:</h4>
+                                            <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                                {folders.map(folder => (
+                                                    <label key={folder} className="flex items-center text-sm cursor-pointer" style={{ color: 'var(--text-3)' }}>
+                                                        <input type="checkbox" checked={selectedFolders.has(folder)} onChange={() => handleFolderToggle(folder)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
+                                                        {folder === '/' ? 'Root' : folder}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Right group: show filter, searchbox, save button */}
+                                <div className="flex-shrink-0 flex items-center gap-4">
+                                    <label className="flex items-center text-sm cursor-pointer" style={{ color: 'var(--text-3)' }}>
+                                        <input type="checkbox" checked={showGrayscale} onChange={() => setShowGrayscale(!showGrayscale)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
+                                        Show Grayscale
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Filter by name..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full sm:w-64 px-3 py-2 rounded-none focus:outline-none focus:ring-2"
+                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
+                                    />
+                                    <div className="flex items-center gap-2">
+                                        {saveStatus && <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-4)' }}>{saveStatus}</span>}
+                                        <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path>
+                                            </svg>
+                                            Save Files
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
+                            <p className="text-sm" style={{ color: 'var(--text-4)' }}>{filteredParams.length} color parameters found.</p>
                         </div>
-                        <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
+                        <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
 
                           <table className="w-full text-sm text-left">
                             <thead style={{ color: 'var(--text-4)' }}>
@@ -637,7 +682,7 @@ function App() {
                                 <th scope="col" className="p-4">
                                   <input type="checkbox" onChange={handleSelectAll} checked={filteredParams.length > 0 && selectedParams.size === filteredParams.length} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
                                 </th>
-                                <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">File</th>
+                                <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Path</th>
                                 <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Parameter Name</th>
                                 <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Color</th>
                                 <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">R</th>
@@ -672,7 +717,7 @@ function App() {
                                     <td className="w-4 p-4">
                                       <input type="checkbox" checked={selectedParams.has(p.id)} onChange={() => handleSelectionChange(p.id)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
                                     </td>
-                                    <td className="px-6 py-4 font-medium whitespace-nowrap" style={{ color: 'var(--text-2)' }}>{p.fileName}</td>
+                                    <td className="px-6 py-4 font-medium whitespace-nowrap" style={{ color: 'var(--text-2)' }}>{p.relativePath}</td>
                                     <td className="px-6 py-4">{p.paramName}</td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
@@ -741,7 +786,8 @@ function App() {
   );
 }
 
-// Monta il componente App nel DOM
+// Render the app into the page
 const container = document.getElementById('root');
 const root = ReactDOM.createRoot(container);
 root.render(<App />);
+

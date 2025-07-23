@@ -1,9 +1,16 @@
 [package]
 name = "rivals-vfx-editor"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "1.1.0"
+description = "A simple yet powerful web-based editor for batch editing color parameters in Marvel Rivals' VFX material files."
+authors = ["Saturn"]
 edition = "2021"
+repository = "https://github.com/0xSaturno/rivals-vfx-editor.git"
+
+[package.metadata.wix]
+upgrade-guid = "B38FF933-4540-4E63-84A9-802B6CE207F5"
+path-guid = "E3FA753E-E2C0-4D4C-82A4-90A1E23ED421"
+license = false
+eula = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -22,4 +29,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
 

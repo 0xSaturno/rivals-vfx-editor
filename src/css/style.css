@@ -1,15 +1,15 @@
-/* Proprietà personalizzate per la palette di colori del tema */
+/* Theme colors */
 :root {
     --font-main: 'DM Mono', monospace;
-    --bg-4: #1e1f22; /* Sfondo principale */
-    --bg-3: #2b2d31; /* Sfondi delle card */
-    --bg-2: #383a40; /* Bordi, input */
-    --bg-1: #40434b; /* Stati hover */
+    --bg-4: #1e1f22; /* main background color */
+    --bg-3: #2b2d31; /* for cards and panels */
+    --bg-2: #383a40; /* borders, inputs, stuff like that */
+    --bg-1: #40434b; /* hover states */
     
-    --text-1: #f2f2f2; /* Testo più luminoso */
-    --text-2: #dbdee1; /* Titoli, testo importante */
-    --text-3: #b8b9bf; /* Testo normale */
-    --text-4: #9499a0; /* Testo attenuato */
+    --text-1: #f2f2f2; /* brightest text */
+    --text-2: #dbdee1; /* titles, important text */
+    --text-3: #b8b9bf; /* normal body text */
+    --text-4: #9499a0; /* muted text */
 
     --accent-main: #ccffff;
     --accent-green: #248046;
@@ -19,7 +19,7 @@ body {
     background-color: var(--bg-4);
 }
 
-/* Stili personalizzati per lo slider */
+/* Making the range slider look decent */
 input[type="range"] {
     -webkit-appearance: none;
     appearance: none;
@@ -50,7 +50,7 @@ input[type="range"]::-moz-range-thumb {
     border: 2px solid var(--bg-4);
 }
 
-/* ===== Stili per la Scrollbar Personalizzata ===== */
+/* ===== Custom Scrollbar Styles ===== */
 ::-webkit-scrollbar {
     width: 12px;
 }
@@ -70,11 +70,11 @@ html {
     scrollbar-color: var(--bg-1) var(--bg-4);
 }
 
-/* ===== Stili per l'Animazione delle Particelle ===== */
+/* ===== Particle Animation Styles ===== */
 .particle-header {
     position: relative;
-    overflow: hidden; /* Nasconde le particelle che escono dai bordi */
-    background-color: #000; /* Sfondo nero per le particelle */
+    overflow: hidden; /* hide the bits that go outside the box */
+    background-color: #000; /* black background for the stars */
 }
 
 .particles {
