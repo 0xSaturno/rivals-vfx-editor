@@ -1,5 +1,6 @@
 [workspace]
-members = ["src-tauri"]
+# This line tells cargo-dist that the Rust project is in the 'src-tauri' folder.
+members = ["cargo:."]
 
 # Config for 'dist'
 [dist]
@@ -7,8 +8,12 @@ members = ["src-tauri"]
 cargo-dist-version = "0.28.2"
 # CI backends to support
 ci = "github"
-# The installers to generate for each app
-installers = []
+# By removing the 'installers' line, cargo-dist will only build the default archives (.zip for windows)
+# A list of extra files and folders to include in the final archive
+include = ["batch-scripts", "licenses"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
-include = ["batch-scripts", "licenses"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false
