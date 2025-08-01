@@ -1,0 +1,12 @@
+{
+  "name": "rivals-vfx-editor",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

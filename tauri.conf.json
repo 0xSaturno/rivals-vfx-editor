@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "rivals-vfx-editor",
+  "version": "1.1.0",
+  "identifier": "com.rivals-vfx-editor.saturn",
+  "build": {
+    "frontendDist": "./RVFXE"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Rivals VFX Editor",
+        "width": 1440,
+        "height": 800,
+        "dragDropEnabled": false,
+        "zoomHotkeysEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+        "./build/icon.png",
+        "./build/icon.ico"
+    ],
+    "resources": [
+        "./RVFXE/assets",
+        "./RVFXE/css",
+        "./RVFXE/fonts",
+        "./RVFXE/js"
+    ]
+  }
+}

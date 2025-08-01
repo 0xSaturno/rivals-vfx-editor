@@ -1,0 +1,105 @@
+/* Theme colors */
+:root {
+    --font-main: 'DM Mono', monospace;
+    --bg-4: #1e1f22; /* main background color */
+    --bg-3: #2b2d31; /* for cards and panels */
+    --bg-2: #383a40; /* borders, inputs, stuff like that */
+    --bg-1: #40434b; /* hover states */
+    
+    --text-1: #f2f2f2; /* brightest text */
+    --text-2: #dbdee1; /* titles, important text */
+    --text-3: #b8b9bf; /* normal body text */
+    --text-4: #9499a0; /* muted text */
+
+    --accent-main: #ccffff;
+    --accent-green: #248046;
+}
+body {
+    font-family: var(--font-main);
+    background-color: var(--bg-4);
+}
+
+/* Making the range slider look decent */
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--bg-2);
+    outline: none;
+    opacity: 0.7;
+    transition: opacity .2s;
+}
+input[type="range"]:hover {
+    opacity: 1;
+}
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent-main);
+    cursor: pointer;
+    border: 2px solid var(--bg-4);
+}
+input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent-main);
+    cursor: pointer;
+    border: 2px solid var(--bg-4);
+}
+
+/* ===== Custom Scrollbar Styles ===== */
+::-webkit-scrollbar {
+    width: 12px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg-4);
+}
+::-webkit-scrollbar-thumb {
+    background-color: var(--bg-1);
+    border-radius: 20px;
+    border: 3px solid var(--bg-4);
+}
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--accent-main);
+}
+html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-1) var(--bg-4);
+}
+
+/* ===== Particle Animation Styles ===== */
+.particle-header {
+    position: relative;
+    overflow: hidden; /* hide the bits that go outside the box */
+    background-color: #000; /* black background for the stars */
+}
+
+.particles {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+}
+
+.particle {
+    position: absolute;
+    border-radius: 50%;
+    background: white;
+    animation: float infinite linear;
+}
+
+@keyframes float {
+    0% {
+        transform: translateY(0) translateX(0);
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(-150px) translateX(20px);
+        opacity: 0;
+    }
+}
