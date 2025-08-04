@@ -1,4 +1,8 @@
 # **<img src="https://cdn.jsdelivr.net/gh/ilSaturnooooo/saturno-resourcers/saturno_logo_full-alpha-icon.png" width="28"/> Rivals VFX Editor**
+[![Release](https://img.shields.io/github/v/release/0xSaturno/rivals-vfx-editor.svg?style=flat-square)](https://github.com/0xSaturno/rivals-vfx-editor/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/0xSaturno/rivals-vfx-editor/total.svg?style=flat-square)](https://github.com/0xSaturno/rivals-vfx-editor/releases)
+[![Issues](https://img.shields.io/github/issues/0xSaturno/rivals-vfx-editor.svg?style=flat-square)](https://github.com/0xSaturno/rivals-vfx-editor/issues)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/0xSaturno/rivals-vfx-editor/release.yml?label=CI)](https://github.com/0xSaturno/rivals-vfx-editor/actions)
 
 A simple yet powerful web-based editor for batch editing color parameters in Marvel Rivals' VFX material files.
 

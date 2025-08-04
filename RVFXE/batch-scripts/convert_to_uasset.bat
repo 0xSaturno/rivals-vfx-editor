@@ -1,5 +1,5 @@
 @echo off
-title JSON to UAsset Conversion
+title JSON to UAsset Conversion (Recursive)
 
 REM Enable ANSI escape codes for colors
 for /F "tokens=1,2 delims=#" %%a in ('"prompt #$H#$E# & echo on & for %%b in (1) do rem"') do (
@@ -61,6 +61,32 @@ if not exist "%outputFolder%" (
 REM --- CONVERSION ---
 echo.
 echo %yellow%--- CONVERSION PROCESS ---%reset%
+
+REM --- SETUP MAPPINGS (New Section) ---
+echo %magenta%Setting up UAssetGUI mappings...%reset%
+set "mappings_dir=%LOCALAPPDATA%\UAssetGUI\Mappings"
+set "source_map=%~dp0Rivals.usmap"
+
+REM Create the mappings directory if it doesn't exist
+if not exist "%mappings_dir%\" (
+    echo %magenta%INFO: UAssetGUI Mappings folder not found, creating it...%reset%
+    mkdir "%mappings_dir%"
+)
+
+REM Copy the .usmap file if it doesn't already exist in the destination
+if not exist "%mappings_dir%\Rivals.usmap" (
+    if exist "%source_map%" (
+        echo %magenta%INFO: Copying 'Rivals.usmap' to AppData...%reset%
+        copy "%source_map%" "%mappings_dir%\" >nul
+    ) else (
+        echo %red%WARNING: 'Rivals.usmap' not found in script directory. Conversion may fail.%reset%
+    )
+) else (
+    echo %green%Mappings file 'Rivals.usmap' already exists in AppData. Skipping copy.%reset%
+)
+echo.
+REM --- END NEW SECTION ---
+
 echo %magenta%Starting conversion from JSON to UAsset...%reset%
 echo %magenta%Source folder:   %white%%sourceFolder%%reset%
 echo %magenta%Output folder:  %white%%outputFolder%%reset%
