@@ -151,71 +151,43 @@ const ToggleSwitch = ({ label, enabled, setEnabled }) => {
 
 // MAIN APP COMPONENT
 function App() {
-    const [colorParams, setColorParams] = useState([]);
-    const [originalFiles, setOriginalFiles] = useState({});
-    
-    const [shiftKeyPressed, setShiftKeyPressed] = useState(false);
-    const [ctrlKeyPressed, setCtrlKeyPressed] = useState(false);
-    const [altKeyPressed, setAltKeyPressed] = useState(false);
-    const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
+  const [colorParams, setColorParams] = useState([]);
+  const [originalFiles, setOriginalFiles] = useState({});
+  const [selectedParams, setSelectedParams] = useState(new Set());
+  const [masterColor, setMasterColor] = useState('#ffffff');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
+  
+  const [ignoreGrayscale, setIgnoreGrayscale] = useState(true);
+  const [preserveIntensity, setPreserveIntensity] = useState(true);
+  const [showGrayscale, setShowGrayscale] = useState(true);
+  const [hueShiftValue, setHueShiftValue] = useState(0);
+  
+  const [shuffleColors, setShuffleColors] = useState(['#ccffff', '#88eeee', '#66dddd']);
+  
+  const directoryHandleRef = useRef(null);
 
-    
-    const [selectedParams, setSelectedParams] = useState(new Set());
-    const [masterColor, setMasterColor] = useState('#ffffff');
-    const [searchTerm, setSearchTerm] = useState('');
-    const [isDragging, setIsDragging] = useState(false);
-    const [saveStatus, setSaveStatus] = useState('');
-    
-    const [ignoreGrayscale, setIgnoreGrayscale] = useState(true);
-    const [preserveIntensity, setPreserveIntensity] = useState(true);
-    const [showGrayscale, setShowGrayscale] = useState(true);
-    const [hueShiftValue, setHueShiftValue] = useState(0);
-    
-    const [shuffleColors, setShuffleColors] = useState(['#ccffff', '#88eeee', '#66dddd']);
-    
-    const directoryHandleRef = useRef(null);
-
-    const [folders, setFolders] = useState([]);
-    const [selectedFolders, setSelectedFolders] = useState(new Set());
-    const [filterDictionary, setFilterDictionary] = useState(null);
-    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'none' });
+  const [folders, setFolders] = useState([]);
+  const [selectedFolders, setSelectedFolders] = useState(new Set());
+  const [filterDictionary, setFilterDictionary] = useState(null);
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'none' });
 
   
-// this effect loads the external filter dictionary
-    useEffect(() => {
-        const loadDictionary = async () => {
-            try {
-                const response = await fetch('./filter_dictionary.json');
-                const data = await response.json();
-                setFilterDictionary(data);
-            } catch (error) {
-                console.error("Failed to load filter dictionary:", error);
-                alert("CRITICAL ERROR: no dic found. ¯\_(ツ)_/¯");
-            }
-        };
-        loadDictionary();
-    }, []); // the empty array [] means this runs only once
-
-// this effect handles keystrokes for multi-selection
-    useEffect(() => {
-    const handleKeyDown = (e) => {
-        if (e.key === 'Shift') setShiftKeyPressed(true);
-        if (e.key === 'Control') setCtrlKeyPressed(true);
-        if (e.key === 'Alt') setAltKeyPressed(true);
+// this effect runs once to load the external filter dictionary
+  useEffect(() => {
+    const loadDictionary = async () => {
+        try {
+            const response = await fetch('./filter_dictionary.json');
+            const data = await response.json();
+            setFilterDictionary(data);
+        } catch (error) {
+            console.error("Failed to load filter dictionary:", error);
+            alert("CRITICAL ERROR: no dic found. ¯\_(ツ)_/¯");
+        }
     };
-    const handleKeyUp = (e) => {
-        if (e.key === 'Shift') setShiftKeyPressed(false);
-        if (e.key === 'Control') setCtrlKeyPressed(false);
-        if (e.key === 'Alt') setAltKeyPressed(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-        window.removeEventListener('keydown', handleKeyDown);
-        window.removeEventListener('keyup', handleKeyUp);
-    };
-    }, []);
-
+    loadDictionary();
+  }, []); // the empty array [] means this runs only once
 
   // JSON format spider to find color parameters
   const parseJsonAndExtractColors = (json, fileName, relativePath, allParams) => {
@@ -384,40 +356,17 @@ const traverseFileTree = async (item, path, fileObjects) => {
     );
   };
 
-  
-const handleSelectionChange = (id) => {
-  const index = filteredParams.findIndex(p => p.id === id);
-  if (index === -1) return;
-
-  setSelectedParams(prev => {
-    let next = new Set(prev);
-
-    if ((shiftKeyPressed || altKeyPressed) && lastSelectedIndex !== null) {
-      const start = Math.min(lastSelectedIndex, index);
-      const end = Math.max(lastSelectedIndex, index);
-      for (let i = start; i <= end; i++) {
-        const currentId = filteredParams[i].id;
-        if (altKeyPressed) {
-          next.delete(currentId); // deselect range
-        } else {
-          next.add(currentId);    // select range
-        }
-      }
-    } else {
-      if (next.has(id)) {
-        next.delete(id);
+  const handleSelectionChange = (id) => {
+    setSelectedParams(prevSelected => {
+      const newSelected = new Set(prevSelected);
+      if (newSelected.has(id)) {
+        newSelected.delete(id);
       } else {
-        next.add(id);
+        newSelected.add(id);
       }
-    }
-
-    return next;
-  });
-
-  setLastSelectedIndex(index);
-};
-
-    
+      return newSelected;
+    });
+  };
 
   const handleSelectAll = () => {
     if (selectedParams.size === filteredParams.length) {
@@ -431,7 +380,7 @@ const handleSelectionChange = (id) => {
     const { ignoreGrayscaleCheck = false } = options;
     const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
 
-    //  added 'ignoreGrayscaleCheck' to bypass it when needed
+    // We add the 'ignoreGrayscaleCheck' to bypass this when needed
     if (!ignoreGrayscaleCheck && ignoreGrayscale && isGrayscale) {
         return p.rgba;
     }
@@ -862,13 +811,7 @@ const filteredParams = useMemo(() => {
                                 return (
                                   <tr key={p.id} className="hover:bg-opacity-50" style={{ borderBottom: '1px solid var(--bg-2)', backgroundColor: isPreviewing ? 'rgba(204, 255, 255, 0.05)' : 'transparent' }}>
                                     <td className="w-4 p-4">
-                                        <input
-                                        type="checkbox"
-                                        checked={selectedParams.has(p.id)}
-                                        onChange={() => handleSelectionChange(p.id)}
-                                        className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0"
-                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}
-                                        />
+                                      <input type="checkbox" checked={selectedParams.has(p.id)} onChange={() => handleSelectionChange(p.id)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
                                     </td>
                                     <td className="px-6 py-4 font-medium whitespace-nowrap" style={{ color: 'var(--text-2)' }}>{p.relativePath}</td>
                                     <td className="px-6 py-4">{p.paramName}</td>
@@ -879,7 +822,7 @@ const filteredParams = useMemo(() => {
                                                 value={displayHexColor}
                                                 onChange={(e) => {
                                                     const newColorRgba = hexToRgba(e.target.value);
-                                                    // call applyColor with the option bypassing the grayscale check
+                                                    // We call applyColor with the option to bypass the grayscale check
                                                     const finalRgba = applyColor(p, newColorRgba, { ignoreGrayscaleCheck: true });
                                                     handleParamChange(p.id, finalRgba);
                                                 }}
@@ -948,3 +891,4 @@ const filteredParams = useMemo(() => {
 const container = document.getElementById('root');
 const root = ReactDOM.createRoot(container);
 root.render(<App />);
+
