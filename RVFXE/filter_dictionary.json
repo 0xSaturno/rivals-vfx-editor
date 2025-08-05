@@ -1,0 +1,11 @@
+{
+  "include_keywords": [
+    "color",
+    "tint"
+  ],
+  "exclude_exact": [
+    "LinerColor_Offset&Softness",
+    "ColorMaskChannel",
+    "MaskColor_Enemy"
+  ]
+}

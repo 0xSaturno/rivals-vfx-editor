@@ -32,7 +32,8 @@
         "./RVFXE/assets",
         "./RVFXE/css",
         "./RVFXE/fonts",
-        "./RVFXE/js"
+        "./RVFXE/js",
+        "./RVFXE/filter_dictionary.json"
     ]
   }
 }

@@ -151,25 +151,70 @@ const ToggleSwitch = ({ label, enabled, setEnabled }) => {
 
 // MAIN APP COMPONENT
 function App() {
-  const [colorParams, setColorParams] = useState([]);
-  const [originalFiles, setOriginalFiles] = useState({});
-  const [selectedParams, setSelectedParams] = useState(new Set());
-  const [masterColor, setMasterColor] = useState('#ffffff');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
-  const [saveStatus, setSaveStatus] = useState('');
-  
-  const [ignoreGrayscale, setIgnoreGrayscale] = useState(true);
-  const [preserveIntensity, setPreserveIntensity] = useState(true);
-  const [showGrayscale, setShowGrayscale] = useState(true);
-  const [hueShiftValue, setHueShiftValue] = useState(0);
-  
-  const [shuffleColors, setShuffleColors] = useState(['#ccffff', '#88eeee', '#66dddd']);
-  
-  const directoryHandleRef = useRef(null);
+    const [colorParams, setColorParams] = useState([]);
+    const [originalFiles, setOriginalFiles] = useState({});
+    
+    const [shiftKeyPressed, setShiftKeyPressed] = useState(false);
+    const [ctrlKeyPressed, setCtrlKeyPressed] = useState(false);
+    const [altKeyPressed, setAltKeyPressed] = useState(false);
+    const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
 
-  const [folders, setFolders] = useState([]);
-  const [selectedFolders, setSelectedFolders] = useState(new Set());
+    
+    const [selectedParams, setSelectedParams] = useState(new Set());
+    const [masterColor, setMasterColor] = useState('#ffffff');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isDragging, setIsDragging] = useState(false);
+    const [saveStatus, setSaveStatus] = useState('');
+    
+    const [ignoreGrayscale, setIgnoreGrayscale] = useState(true);
+    const [preserveIntensity, setPreserveIntensity] = useState(true);
+    const [showGrayscale, setShowGrayscale] = useState(true);
+    const [hueShiftValue, setHueShiftValue] = useState(0);
+    
+    const [shuffleColors, setShuffleColors] = useState(['#ccffff', '#88eeee', '#66dddd']);
+    
+    const directoryHandleRef = useRef(null);
+
+    const [folders, setFolders] = useState([]);
+    const [selectedFolders, setSelectedFolders] = useState(new Set());
+    const [filterDictionary, setFilterDictionary] = useState(null);
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'none' });
+
+  
+// this effect loads the external filter dictionary
+    useEffect(() => {
+        const loadDictionary = async () => {
+            try {
+                const response = await fetch('./filter_dictionary.json');
+                const data = await response.json();
+                setFilterDictionary(data);
+            } catch (error) {
+                console.error("Failed to load filter dictionary:", error);
+                alert("CRITICAL ERROR: no dic found. ¯\_(ツ)_/¯");
+            }
+        };
+        loadDictionary();
+    }, []); // the empty array [] means this runs only once
+
+// this effect handles keystrokes for multi-selection
+    useEffect(() => {
+    const handleKeyDown = (e) => {
+        if (e.key === 'Shift') setShiftKeyPressed(true);
+        if (e.key === 'Control') setCtrlKeyPressed(true);
+        if (e.key === 'Alt') setAltKeyPressed(true);
+    };
+    const handleKeyUp = (e) => {
+        if (e.key === 'Shift') setShiftKeyPressed(false);
+        if (e.key === 'Control') setCtrlKeyPressed(false);
+        if (e.key === 'Alt') setAltKeyPressed(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
+    };
+    }, []);
 
 
   // JSON format spider to find color parameters
@@ -183,13 +228,16 @@ function App() {
 
           if (paramName) {
             const paramNameLower = paramName.toLowerCase();
-            const hasColorOrTint = paramNameLower.includes('color') || paramNameLower.includes('tint');
-            const exactExclusionList = ['LinerColor_Offset&Softness', 'ColorMaskChannel', 'MaskColor_Enemy'];
+            if (!filterDictionary) return; // Don't run if the dictionary isn't loaded yet
+
+            const hasIncludeKeyword = filterDictionary.include_keywords.some(keyword => paramNameLower.includes(keyword));
+            const isExactlyExcluded = filterDictionary.exclude_exact.includes(paramName);
+            
+            // keep the hardcoded keyword exclusion list as it's more technical
             const keywordExclusionList = ['offset', 'uv'];
-            const isExactlyExcluded = exactExclusionList.includes(paramName);
             const hasExcludedKeyword = keywordExclusionList.some(keyword => paramNameLower.includes(keyword));
 
-            if (hasColorOrTint && !isExactlyExcluded && !hasExcludedKeyword) {
+            if (hasIncludeKeyword && !isExactlyExcluded && !hasExcludedKeyword) {
                 const paramValueObj = param?.Value?.find(p => p.Name === 'ParameterValue');
                 const linearColor = paramValueObj?.Value?.find(p => p.Name === 'ParameterValue')?.Value;
 
@@ -336,17 +384,40 @@ const traverseFileTree = async (item, path, fileObjects) => {
     );
   };
 
-  const handleSelectionChange = (id) => {
-    setSelectedParams(prevSelected => {
-      const newSelected = new Set(prevSelected);
-      if (newSelected.has(id)) {
-        newSelected.delete(id);
-      } else {
-        newSelected.add(id);
+  
+const handleSelectionChange = (id) => {
+  const index = filteredParams.findIndex(p => p.id === id);
+  if (index === -1) return;
+
+  setSelectedParams(prev => {
+    let next = new Set(prev);
+
+    if ((shiftKeyPressed || altKeyPressed) && lastSelectedIndex !== null) {
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      for (let i = start; i <= end; i++) {
+        const currentId = filteredParams[i].id;
+        if (altKeyPressed) {
+          next.delete(currentId); // deselect range
+        } else {
+          next.add(currentId);    // select range
+        }
       }
-      return newSelected;
-    });
-  };
+    } else {
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+    }
+
+    return next;
+  });
+
+  setLastSelectedIndex(index);
+};
+
+    
 
   const handleSelectAll = () => {
     if (selectedParams.size === filteredParams.length) {
@@ -356,10 +427,12 @@ const traverseFileTree = async (item, path, fileObjects) => {
     }
   };
 
-  const applyColor = (p, newColorRgba) => {
+  const applyColor = (p, newColorRgba, options = {}) => {
+    const { ignoreGrayscaleCheck = false } = options;
     const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
 
-    if (ignoreGrayscale && isGrayscale) {
+    // 'ignoreGrayscaleCheck' to bypass it when needed
+    if (!ignoreGrayscaleCheck && ignoreGrayscale && isGrayscale) {
         return p.rgba;
     }
 
@@ -523,6 +596,17 @@ const handleSave = async () => {
     setTimeout(() => setSaveStatus(''), 10000);
   };
 
+const requestSort = (key) => {
+    let direction = 'ascending';
+    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+        direction = 'descending';
+    } else if (sortConfig.key === key && sortConfig.direction === 'descending') {
+        direction = 'none'; // Cycle back to no sort
+        key = null;
+    }
+    setSortConfig({ key, direction });
+  };
+
   const handleFolderToggle = (folder) => {
       setSelectedFolders(prev => {
           const newSet = new Set(prev);
@@ -535,8 +619,32 @@ const handleSave = async () => {
       });
   };
   
-  const filteredParams = useMemo(() => {
-    let params = colorParams;
+const filteredParams = useMemo(() => {
+    let sortableParams = [...colorParams];
+
+    if (sortConfig.key !== null && sortConfig.direction !== 'none') {
+        sortableParams.sort((a, b) => {
+            if (sortConfig.key === 'color') {
+                const [hA, sA, lA] = rgbToHsl(a.rgba.R, a.rgba.G, a.rgba.B);
+                const [hB, sB, lB] = rgbToHsl(b.rgba.R, b.rgba.G, b.rgba.B);
+
+                if (hA < hB) return -1;
+                if (hA > hB) return 1;
+                if (sA < sB) return -1;
+                if (sA > sB) return 1;
+                if (lA < lB) return -1;
+                if (lA > lB) return 1;
+                return 0;
+            }
+            return 0;
+        });
+        if (sortConfig.direction === 'descending') {
+            sortableParams.reverse();
+        }
+    }
+
+    // Apply filters AFTER sorting or on the original array
+    let params = sortableParams;
 
     // Filter by selected folders
     if (folders.length > 0) {
@@ -559,7 +667,7 @@ const handleSave = async () => {
     }
     
     return params;
-  }, [colorParams, searchTerm, showGrayscale, selectedFolders, folders]);
+  }, [colorParams, searchTerm, showGrayscale, selectedFolders, folders, sortConfig]);
 
   return (
     <div style={{ backgroundColor: 'var(--bg-4)', color: 'var(--text-3)' }} className="min-h-screen p-6">
@@ -569,7 +677,11 @@ const handleSave = async () => {
             <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-main)', zIndex: 2 }}></div>
             <div className="flex items-center gap-4 relative" style={{ zIndex: 1 }}>
                 <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className="h-24 filter brightness-0 invert" />
-                <h1 className="text-5xl font-bold" style={{ color: 'var(--text-1)' }}>Rivals VFX Editor</h1>
+                {/* New container with flexbox alignment */}
+                <div className="flex items-baseline gap-3">
+                    <h1 className="text-5xl font-bold" style={{ color: 'var(--text-1)' }}>Rivals VFX Editor</h1>
+                    <h2 className="text-1xl font-medium" style={{ color: 'var(--text-4)' }}>v1.1.0-rat_only_preview-hehe</h2>
+                </div>
             </div>
             <span className="absolute bottom-2 right-4 text-xs" style={{ color: 'var(--text-4)', zIndex: 1 }}>
                 by Saturn
@@ -583,13 +695,28 @@ const handleSave = async () => {
                         <StyledPanel title="Global Controls">
                             <div className="flex flex-col space-y-6">
                                 <div className="space-y-2">
-                                    <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Fixed Color</h3>
-                                    <div className="flex items-center space-x-4">
-                                        <input type="color" value={masterColor} onChange={e => setMasterColor(e.target.value)} className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}/>
-                                        <button onClick={applyMasterColor} className="flex-grow px-4 py-3 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
-                                            Apply Fixed Color
-                                        </button>
-                                    </div>
+                                    <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Single Color</h3>
+                                        <div className="flex items-center space-x-4">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <input 
+                                                    type="color" 
+                                                    value={masterColor} 
+                                                    onChange={(e) => setMasterColor(e.target.value)} 
+                                                    className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}
+                                                />
+                                                <input 
+                                                    type="text" 
+                                                    value={masterColor.toUpperCase()} 
+                                                    onChange={(e) => setMasterColor(e.target.value)}
+                                                    className="w-20 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none"
+                                                    style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
+                                                    maxLength="7"
+                                                />
+                                            </div>
+                                            <button onClick={applyMasterColor} className="flex-grow px-4 py-3 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
+                                                Apply Single
+                                            </button>
+                                        </div>
                                 </div>
                                 <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
                                      <div className="flex justify-between items-center">
@@ -608,11 +735,26 @@ const handleSave = async () => {
                                 </div>
                                 <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
                                      <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Color Shuffle</h3>
-                                     <div className="flex justify-around items-center">
-                                        {shuffleColors.map((color, index) => (
-                                            <input key={index} type="color" value={color} onChange={(e) => handleShuffleColorChange(index, e.target.value)} className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}/>
-                                        ))}
-                                     </div>
+                                        <div className="flex justify-around items-center">
+                                            {shuffleColors.map((color, index) => (
+                                                <div key={index} className="flex flex-col items-center gap-2">
+                                                    <input 
+                                                        type="color" 
+                                                        value={color} 
+                                                        onChange={(e) => handleShuffleColorChange(index, e.target.value)} 
+                                                        className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}
+                                                    />
+                                                    <input 
+                                                        type="text" 
+                                                        value={color.toUpperCase()} 
+                                                        onChange={(e) => handleShuffleColorChange(index, e.target.value)}
+                                                        className="w-20 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none"
+                                                        style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
+                                                        maxLength="7"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
                                      <button onClick={applyShuffle} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
                                         Apply Shuffle
                                     </button>
@@ -683,7 +825,13 @@ const handleSave = async () => {
                                 </th>
                                 <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Path</th>
                                 <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Parameter Name</th>
-                                <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Color</th>
+                                <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider cursor-pointer" onClick={() => requestSort('color')}>
+                                    <div className="flex items-center gap-2">
+                                        <span>Color</span>
+                                        {sortConfig.key === 'color' && sortConfig.direction === 'ascending' && <span>▲</span>}
+                                        {sortConfig.key === 'color' && sortConfig.direction === 'descending' && <span>▼</span>}
+                                    </div>
+                                </th>
                                 <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">R</th>
                                 <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">G</th>
                                 <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">B</th>
@@ -714,7 +862,13 @@ const handleSave = async () => {
                                 return (
                                   <tr key={p.id} className="hover:bg-opacity-50" style={{ borderBottom: '1px solid var(--bg-2)', backgroundColor: isPreviewing ? 'rgba(204, 255, 255, 0.05)' : 'transparent' }}>
                                     <td className="w-4 p-4">
-                                      <input type="checkbox" checked={selectedParams.has(p.id)} onChange={() => handleSelectionChange(p.id)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
+                                        <input
+                                        type="checkbox"
+                                        checked={selectedParams.has(p.id)}
+                                        onChange={() => handleSelectionChange(p.id)}
+                                        className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0"
+                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}
+                                        />
                                     </td>
                                     <td className="px-6 py-4 font-medium whitespace-nowrap" style={{ color: 'var(--text-2)' }}>{p.relativePath}</td>
                                     <td className="px-6 py-4">{p.paramName}</td>
@@ -724,8 +878,10 @@ const handleSave = async () => {
                                                 type="color" 
                                                 value={displayHexColor}
                                                 onChange={(e) => {
-                                                    const newRgb = hexToRgba(e.target.value);
-                                                    handleParamChange(p.id, {...p.rgba, ...newRgb});
+                                                    const newColorRgba = hexToRgba(e.target.value);
+                                                    // call applyColor bypassing the grayscale check
+                                                    const finalRgba = applyColor(p, newColorRgba, { ignoreGrayscaleCheck: true });
+                                                    handleParamChange(p.id, finalRgba);
                                                 }}
                                                 className="w-8 h-8 p-0 border-2 cursor-pointer"
                                                 style={{ backgroundColor: 'transparent', borderColor: 'var(--bg-1)' }}
@@ -771,8 +927,11 @@ const handleSave = async () => {
                                     <path d="M9 15.5a1.5 1.5 0 0 0-3 0v1a1.5 1.5 0 0 0 3 0"></path>
                                     <path d="M18 15.5a1.5 1.5 0 0 0-3 0v1a1.5 1.5 0 0 0 3 0"></path>
                                 </svg>
-                                <h3 className="mt-2 text-lg font-medium" style={{ color: 'var(--text-2)' }}>No files loaded</h3>
-                                <p className="mt-1 text-sm" style={{ color: 'var(--text-4)' }}>Drag and drop .json files here to begin.</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>No files loaded</h3>
+                                    <img src="./assets/images/shrug.png" alt="shrug emoji" className="h-6 w-6" />
+                                </div>
+                                <p className="mt-1 text-sm" style={{ color: 'var(--text-4)' }}>Drag and drop .json files or click here to begin.</p>
                                 <input type='file' className="hidden" multiple accept=".json" onChange={handleFileChange} />
                             </label>
                         </div>
@@ -789,4 +948,3 @@ const handleSave = async () => {
 const container = document.getElementById('root');
 const root = ReactDOM.createRoot(container);
 root.render(<App />);
-
