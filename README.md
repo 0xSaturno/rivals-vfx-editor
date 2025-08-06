@@ -38,12 +38,6 @@ A simple yet powerful web-based editor for batch editing color parameters in Mar
   * `Ctrl + Mouse scroll wheel` to scale the app UI.
   * `F5` to reset the app. 
 
-## **🏗️ Setup Requirements**
-
-1. Get latest UassetGUI exe from [this repo](https://github.com/atenfyr/UAssetGUI/releases).
-2. **Place** `UassetGUI.exe` in the `batch-scripts` folder.
-3. Conversion scripts will automatically set up the mappings file when needed.
-
 ## **🌈 VFX Editor Usage**
 
 1. **Launch the `Rivals VFX Editor.exe` app**.
@@ -55,7 +49,10 @@ A simple yet powerful web-based editor for batch editing color parameters in Mar
 
 ## **🔄️ Conversion Scripts Usage**
 
-Check **Setup Requirements** first to be able to use the scripts.
 * `convert_to_json.bat` can be used to batch convert .uasset files to .json.
 * `convert_to_uasset.bat` can be used to batch convert .json files back to .uasset.
 * `update_mappings.bat` can be used to update UassetGUI to the latest mappings file.
+
+
+### ℹ️ acknowledgements
+- [UassetGUI](https://github.com/atenfyr/UAssetGUI): included in this software as requirement for conversion scripts
