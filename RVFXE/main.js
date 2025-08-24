@@ -6,7 +6,7 @@ const Particles = () => {
         const particleArray = [];
         const numParticles = 200; //  stars amount!
         for (let i = 0; i < numParticles; i++) {
-            const size = Math.random() * 2.5 + 0.5; 
+            const size = Math.random() * 2.5 + 0.5;
             const duration = 5 + Math.random() * 10; // shorter duration = faster particles
             const style = {
                 width: `${size}px`,
@@ -14,7 +14,7 @@ const Particles = () => {
                 left: `${Math.random() * 100}%`,
                 top: `${Math.random() * 100}%`,
                 animationDelay: `-${Math.random() * duration}s`, // negative delay makes them start at random points in the animation, no delay
-                animationDuration: `${duration}s`, 
+                animationDuration: `${duration}s`,
             };
             particleArray.push(<div key={i} className="particle" style={style}></div>);
         }
@@ -27,11 +27,11 @@ const Particles = () => {
 
 // helper function to dive into a nested object and change a value.
 const setNestedValue = (obj, path, value) => {
-  let schema = obj;
-  for (let i = 0; i < path.length - 1; i++) {
-    schema = schema[path[i]];
-  }
-  schema[path[path.length - 1]] = value;
+    let schema = obj;
+    for (let i = 0; i < path.length - 1; i++) {
+        schema = schema[path[i]];
+    }
+    schema[path[path.length - 1]] = value;
 };
 
 const rgbaToDisplayHex = (r, g, b) => {
@@ -49,17 +49,17 @@ const rgbaToDisplayHex = (r, g, b) => {
 };
 
 const hexToRgba = (hex) => {
-  let r = 0, g = 0, b = 0;
-  if (hex.length === 4) {
-    r = parseInt(hex[1] + hex[1], 16);
-    g = parseInt(hex[2] + hex[2], 16);
-    b = parseInt(hex[3] + hex[3], 16);
-  } else if (hex.length === 7) {
-    r = parseInt(hex[1] + hex[2], 16);
-    g = parseInt(hex[3] + hex[4], 16);
-    b = parseInt(hex[5] + hex[6], 16);
-  }
-  return { r: r / 255, g: g / 255, b: b / 255 };
+    let r = 0, g = 0, b = 0;
+    if (hex.length === 4) {
+        r = parseInt(hex[1] + hex[1], 16);
+        g = parseInt(hex[2] + hex[2], 16);
+        b = parseInt(hex[3] + hex[3], 16);
+    } else if (hex.length === 7) {
+        r = parseInt(hex[1] + hex[2], 16);
+        g = parseInt(hex[3] + hex[4], 16);
+        b = parseInt(hex[5] + hex[6], 16);
+    }
+    return { r: r / 255, g: g / 255, b: b / 255 };
 };
 
 function rgbToHsl(r, g, b) {
@@ -68,7 +68,7 @@ function rgbToHsl(r, g, b) {
     const r_norm = r / maxVal;
     const g_norm = g / maxVal;
     const b_norm = b / maxVal;
-    
+
     const max = Math.max(r_norm, g_norm, b_norm), min = Math.min(r_norm, g_norm, b_norm);
     let h, s, l = (max + min) / 2;
 
@@ -95,16 +95,16 @@ function hslToRgb(h, s, l) {
         const hue2rgb = (p, q, t) => {
             if (t < 0) t += 1;
             if (t > 1) t -= 1;
-            if (t < 1/6) return p + (q - p) * 6 * t;
-            if (t < 1/2) return q;
-            if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
             return p;
         };
         const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
         const p = 2 * l - q;
-        r = hue2rgb(p, q, h + 1/3);
+        r = hue2rgb(p, q, h + 1 / 3);
         g = hue2rgb(p, q, h);
-        b = hue2rgb(p, q, h - 1/3);
+        b = hue2rgb(p, q, h - 1 / 3);
     }
     return [r, g, b];
 }
@@ -115,7 +115,7 @@ const StyledPanel = ({ title, children, className, ...props }) => {
             <div className="absolute inset-0 border-2 pointer-events-none transition-colors" style={{ borderColor: 'var(--bg-2)' }}></div>
             <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-main)' }}></div>
             <h2 className="absolute -top-3 left-4 px-2 text-xl font-medium" style={{ backgroundColor: 'var(--bg-3)', color: 'var(--text-2)' }}>
-               <span className="transition-colors group-hover:text-[--accent-main]">{title}</span>
+                <span className="transition-colors group-hover:text-[--accent-main]">{title}</span>
             </h2>
             <div className="p-6 pt-8">
                 {children}
@@ -130,9 +130,9 @@ const ToggleSwitch = ({ label, enabled, setEnabled }) => {
             <span className="text-sm" style={{ color: 'var(--text-3)' }}>{label}</span>
             <div className="relative">
                 <input type="checkbox" className="sr-only peer" checked={enabled} onChange={() => setEnabled(!enabled)} />
-                <div className="block w-14 h-8 transition-colors" style={{ backgroundColor: enabled ? 'var(--accent-main)' : 'var(--bg-1)'}}></div>
-                <div className="absolute left-1 top-1 w-6 h-6 flex items-center justify-center transition-transform peer-checked:translate-x-full" 
-                    style={{ 
+                <div className="block w-14 h-8 transition-colors" style={{ backgroundColor: enabled ? 'var(--accent-main)' : 'var(--bg-1)' }}></div>
+                <div className="absolute left-1 top-1 w-6 h-6 flex items-center justify-center transition-transform peer-checked:translate-x-full"
+                    style={{
                         backgroundColor: 'var(--bg-4)',
                         transform: enabled ? 'translateX(1.5rem)' : 'translateX(0)'
                     }}>
@@ -148,31 +148,77 @@ const ToggleSwitch = ({ label, enabled, setEnabled }) => {
     );
 };
 
+const EditableHexInput = ({ initialHex, onCommit }) => {
+    const [hexValue, setHexValue] = useState(initialHex);
+
+    useEffect(() => {
+        setHexValue(initialHex);
+    }, [initialHex]);
+
+    const handleChange = (e) => {
+        setHexValue(e.target.value);
+    };
+
+    const handleCommit = () => {
+        // check if Hex value is valid
+        if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hexValue)) {
+            onCommit(hexValue);
+        } else {
+            setHexValue(initialHex);
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            handleCommit();
+            e.target.blur(); // Remove input focus
+        } else if (e.key === 'Escape') {
+            setHexValue(initialHex); // Cancel edits with Esc
+            e.target.blur();
+        }
+    };
+
+    return (
+        <input
+            type="text"
+            value={hexValue.toUpperCase()}
+            onChange={handleChange}
+            onBlur={handleCommit} // apply when clickin out of the box
+            onKeyDown={handleKeyDown} // apply or cancel with keystrokes
+            className="w-16 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none focus:ring-2"
+            style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)', 'ringColor': 'var(--accent-main)' }}
+            maxLength="7"
+        />
+    );
+};
+
 
 // MAIN APP COMPONENT
 function App() {
-    const [colorParams, setColorParams] = useState([]);
+    const [history, setHistory] = useState([[]]); // History of colorParams states
+    const [historyIndex, setHistoryIndex] = useState(0); // Pointer to current state in history
+    const colorParams = history[historyIndex] || []; // Get current state from history    
     const [originalFiles, setOriginalFiles] = useState({});
-    
+
     const [shiftKeyPressed, setShiftKeyPressed] = useState(false);
     const [ctrlKeyPressed, setCtrlKeyPressed] = useState(false);
     const [altKeyPressed, setAltKeyPressed] = useState(false);
     const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
 
-    
+
     const [selectedParams, setSelectedParams] = useState(new Set());
     const [masterColor, setMasterColor] = useState('#ffffff');
     const [searchTerm, setSearchTerm] = useState('');
     const [isDragging, setIsDragging] = useState(false);
     const [saveStatus, setSaveStatus] = useState('');
-    
+
     const [ignoreGrayscale, setIgnoreGrayscale] = useState(true);
     const [preserveIntensity, setPreserveIntensity] = useState(true);
     const [showGrayscale, setShowGrayscale] = useState(true);
     const [hueShiftValue, setHueShiftValue] = useState(0);
-    
+
     const [shuffleColors, setShuffleColors] = useState(['#ccffff', '#88eeee', '#66dddd']);
-    
+
     const directoryHandleRef = useRef(null);
 
     const [folders, setFolders] = useState([]);
@@ -180,8 +226,97 @@ function App() {
     const [filterDictionary, setFilterDictionary] = useState(null);
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'none' });
 
-  
-// this effect loads the external filter dictionary
+    const [sessionName, setSessionName] = useState('YourProjectName');
+
+    // Reset button animation states
+    const [isHoldingReset, setIsHoldingReset] = useState(false);
+    const resetTimerRef = useRef(null);
+    const resetButtonRef = useRef(null);
+    const animationFrameRef = useRef(null);
+    const pressStartTimeRef = useRef(null);
+
+
+    // Records a new state in the history for undo/redo
+    const recordHistory = useCallback((newParams) => {
+        const newHistory = [...history.slice(0, historyIndex + 1), newParams];
+        setHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+    }, [history, historyIndex]);
+
+    const handleUndo = useCallback(() => {
+        if (historyIndex > 0) {
+            setHistoryIndex(prevIndex => prevIndex - 1);
+        }
+    }, [historyIndex]);
+
+    const handleRedo = useCallback(() => {
+        if (historyIndex < history.length - 1) {
+            setHistoryIndex(prevIndex => prevIndex + 1);
+        }
+    }, [history, historyIndex]);
+
+    const handleResetPress = () => {
+        pressStartTimeRef.current = Date.now(); // Store user press start time
+        // start animation cycle
+        animationFrameRef.current = requestAnimationFrame(shakeEffect);
+        // Timer to reset
+        resetTimerRef.current = setTimeout(() => {
+                setHistory([[]]);
+                setHistoryIndex(0);
+                setOriginalFiles({});
+                setSelectedParams(new Set());
+                setSearchTerm('');
+                setFolders([]);
+                setSelectedFolders(new Set());
+                setSessionName('YourProjectName');
+                directoryHandleRef.current = null;
+                setMasterColor('#ffffff');
+                setHueShiftValue(0);
+                setShuffleColors(['#ccffff', '#88eeee', '#66dddd']);
+                setPreserveIntensity(true);
+                setIgnoreGrayscale(true);
+                setShowGrayscale(true);
+
+            cancelAnimationFrame(animationFrameRef.current); // Stop animation when complete
+            if (resetButtonRef.current) {
+                resetButtonRef.current.style.transform = 'translate(0, 0)';
+            }
+        }, 2000); // animation duration in ms
+    };
+
+    const handleResetRelease = () => {
+        clearTimeout(resetTimerRef.current); // cancel reset
+
+        cancelAnimationFrame(animationFrameRef.current);
+
+        // Reset button position
+        if (resetButtonRef.current) {
+            resetButtonRef.current.style.transform = 'translate(0, 0)';
+        }
+    };
+
+    const shakeEffect = () => {
+    if (!resetButtonRef.current || !pressStartTimeRef.current) return;
+
+    const elapsedTime = Date.now() - pressStartTimeRef.current;
+    const progress = Math.min(elapsedTime / 2000, 1);
+
+    // Shake controls
+    const maxIntensity = 4; // value in pixel
+    const currentIntensity = maxIntensity * progress;
+
+    // Random the X n Y movement
+    const x = (Math.random() - 0.5) * 2 * currentIntensity;
+    const y = (Math.random() - 0.5) * 2 * currentIntensity;
+
+    // apply the style to the button
+    resetButtonRef.current.style.transform = `translate(${x}px, ${y}px)`;
+
+    // Repeat the function every next frame to make it loop
+    animationFrameRef.current = requestAnimationFrame(shakeEffect);
+    };
+
+    // this effect loads the external filter dictionary
     useEffect(() => {
         const loadDictionary = async () => {
             try {
@@ -196,752 +331,992 @@ function App() {
         loadDictionary();
     }, []); // the empty array [] means this runs only once
 
-// this effect handles keystrokes for multi-selection
+    // this effect handles keystrokes for multi-selection and undo/redo
     useEffect(() => {
-    const handleKeyDown = (e) => {
-        if (e.key === 'Shift') setShiftKeyPressed(true);
-        if (e.key === 'Control') setCtrlKeyPressed(true);
-        if (e.key === 'Alt') setAltKeyPressed(true);
-    };
-    const handleKeyUp = (e) => {
-        if (e.key === 'Shift') setShiftKeyPressed(false);
-        if (e.key === 'Control') setCtrlKeyPressed(false);
-        if (e.key === 'Alt') setAltKeyPressed(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-        window.removeEventListener('keydown', handleKeyDown);
-        window.removeEventListener('keyup', handleKeyUp);
-    };
-    }, []);
+        const handleKeyDown = (e) => {
+            if (e.key === 'Shift') setShiftKeyPressed(true);
+            if (e.key === 'Control' || e.metaKey) setCtrlKeyPressed(true);
+            if (e.key === 'Alt') setAltKeyPressed(true);
 
+            const isCtrl = e.ctrlKey || e.metaKey;
+            if (isCtrl && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) { // Ctrl+Shift+Z for Redo
+                    handleRedo();
+                } else { // Ctrl+Z for Undo
+                    handleUndo();
+                }
+            } else if (isCtrl && e.key.toLowerCase() === 'y') { // Ctrl+Y for Redo
+                e.preventDefault();
+                handleRedo();
+            }
+        };
+        const handleKeyUp = (e) => {
+            if (e.key === 'Shift') setShiftKeyPressed(false);
+            if (e.key === 'Control' || e.metaKey) setCtrlKeyPressed(false);
+            if (e.key === 'Alt') setAltKeyPressed(false);
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [handleUndo, handleRedo]);
 
-  // JSON format spider to find color parameters
-  const parseJsonAndExtractColors = (json, fileName, relativePath, allParams) => {
-        // FORMAT TYPE 1: VFX Material File (original format)
-      const vectorParamsArray = json?.Exports?.[0]?.Data?.find(p => p.Name === 'VectorParameterValues');
-      if (vectorParamsArray && vectorParamsArray.Value) {
-        vectorParamsArray.Value.forEach((param, paramIndex) => {
-          const paramInfo = param?.Value?.find(p => p.Name === 'ParameterInfo');
-          const paramName = paramInfo?.Value?.find(p => p.Name === 'Name')?.Value;
+    const findColorsRecursive = (currentObject, currentPath, fileName, parentName, allParams, relativePath) => {
+        // Exit if the item is not a searchable object
+        if (!currentObject || typeof currentObject !== 'object') {
+            return;
+        }
+        const isColorProperty = (
+            currentObject.Name === 'ColorAndOpacity' ||
+            currentObject.Name === 'SpecifiedColor' ||
+            currentObject.Name === 'BaseColor' ||
+            currentObject.Name === 'HighlightColor' ||
+            currentObject.Name === 'FontTopColor' ||
+            currentObject.Name === 'FontButtomColor'
+        ) &&
+            currentObject.StructType === 'LinearColor';
 
-          if (paramName) {
-            const paramNameLower = paramName.toLowerCase();
-            if (!filterDictionary) return; // Don't run if the dictionary isn't loaded yet
+        const colorValue = currentObject?.Value?.[0]?.Value;
 
-            const hasIncludeKeyword = filterDictionary.include_keywords.some(keyword => paramNameLower.includes(keyword));
-            const isExactlyExcluded = filterDictionary.exclude_exact.includes(paramName);
-            
-            // keep the hardcoded keyword exclusion list as it's more technical
-            const keywordExclusionList = ['offset', 'uv'];
-            const hasExcludedKeyword = keywordExclusionList.some(keyword => paramNameLower.includes(keyword));
+        if (isColorProperty && colorValue && typeof colorValue.R !== 'undefined') {
+            const id = `${relativePath}-${parentName}-${currentObject.Name}-${allParams.length}`;
+            const path = [...currentPath, 'Value', 0, 'Value'];
 
-            if (hasIncludeKeyword && !isExactlyExcluded && !hasExcludedKeyword) {
-                const paramValueObj = param?.Value?.find(p => p.Name === 'ParameterValue');
-                const linearColor = paramValueObj?.Value?.find(p => p.Name === 'ParameterValue')?.Value;
+            const sanitizedRgba = {
+                ...colorValue,
+                R: parseFloat(colorValue.R) || 0,
+                G: parseFloat(colorValue.G) || 0,
+                B: parseFloat(colorValue.B) || 0,
+                A: parseFloat(colorValue.A) || 0,
+            };
 
-                if (linearColor) {
-                  const id = `${relativePath}-${paramName}-${paramIndex}`;
-                  const path = [
-                    'Exports', 0, 'Data', 
-                    json.Exports[0].Data.findIndex(p => p.Name === 'VectorParameterValues'), 
-                    'Value', paramIndex, 'Value', 
-                    param.Value.findIndex(p => p.Name === 'ParameterValue'), 
-                    'Value', 0, 'Value'
-                  ];
-                  
-                  const sanitizedRgba = {
-                      ...linearColor,
-                      R: parseFloat(linearColor.R) || 0,
-                      G: parseFloat(linearColor.G) || 0,
-                      B: parseFloat(linearColor.B) || 0,
-                      A: parseFloat(linearColor.A) || 0,
-                  };
+            const paramName = `${parentName} - ${currentObject.Name}`;
+            allParams.push({ id, fileName, paramName, path, rgba: sanitizedRgba, relativePath });
 
-                  allParams.push({ id, fileName, paramName, path, rgba: sanitizedRgba, relativePath });
+        } else {
+            // If it's not a color property, treat it as a generic container and search its children.
+            if (Array.isArray(currentObject)) {
+                currentObject.forEach((item, index) => {
+                    findColorsRecursive(item, [...currentPath, index], fileName, parentName, allParams, relativePath);
+                });
+            } else {
+                for (const key in currentObject) {
+                    if (Object.prototype.hasOwnProperty.call(currentObject, key)) {
+                        findColorsRecursive(currentObject[key], [...currentPath, key], fileName, parentName, allParams, relativePath);
+                    }
                 }
             }
-          }
+        }
+    };
+
+    // JSON format spider to find color parameters
+    const parseJsonAndExtractColors = (json, fileName, relativePath, allParams) => {
+        // FORMAT TYPE 1: VFX Material File (original format)
+        const vectorParamsArray = json?.Exports?.[0]?.Data?.find(p => p.Name === 'VectorParameterValues');
+        if (vectorParamsArray && vectorParamsArray.Value) {
+            vectorParamsArray.Value.forEach((param, paramIndex) => {
+                const paramInfo = param?.Value?.find(p => p.Name === 'ParameterInfo');
+                const paramName = paramInfo?.Value?.find(p => p.Name === 'Name')?.Value;
+
+                if (paramName) {
+                    const paramNameLower = paramName.toLowerCase();
+                    if (!filterDictionary) return; // Don't run if the dictionary isn't loaded yet
+
+                    const hasIncludeKeyword = filterDictionary.include_keywords.some(keyword => paramNameLower.includes(keyword));
+                    const isExactlyExcluded = filterDictionary.exclude_exact.includes(paramName);
+
+                    // keep the hardcoded keyword exclusion list as it's more technical
+                    const keywordExclusionList = ['offset', 'uv'];
+                    const hasExcludedKeyword = keywordExclusionList.some(keyword => paramNameLower.includes(keyword));
+
+                    if (hasIncludeKeyword && !isExactlyExcluded && !hasExcludedKeyword) {
+                        const paramValueObj = param?.Value?.find(p => p.Name === 'ParameterValue');
+                        const linearColor = paramValueObj?.Value?.find(p => p.Name === 'ParameterValue')?.Value;
+
+                        if (linearColor) {
+                            const id = `${relativePath}-${paramName}-${paramIndex}`;
+                            const path = [
+                                'Exports', 0, 'Data',
+                                json.Exports[0].Data.findIndex(p => p.Name === 'VectorParameterValues'),
+                                'Value', paramIndex, 'Value',
+                                param.Value.findIndex(p => p.Name === 'ParameterValue'),
+                                'Value', 0, 'Value'
+                            ];
+
+                            const sanitizedRgba = {
+                                ...linearColor,
+                                R: parseFloat(linearColor.R) || 0,
+                                G: parseFloat(linearColor.G) || 0,
+                                B: parseFloat(linearColor.B) || 0,
+                                A: parseFloat(linearColor.A) || 0,
+                            };
+
+                            allParams.push({ id, fileName, paramName, path, rgba: sanitizedRgba, relativePath });
+                        }
+                    }
+                }
+            });
+        }
+        // FORMAT TYPE 2: RichText blueprints support
+        else if (json?.Exports?.[0]?.$type === "UAssetAPI.ExportTypes.DataTableExport, UAssetAPI" && json.Exports[0].Table?.Data) {
+            const tableData = json.Exports[0].Table.Data;
+            const tablePath = ['Exports', 0, 'Table', 'Data'];
+
+            tableData.forEach((row, rowIndex) => {
+                if (row.StructType === "RichTextStyleRow") {
+                    const styleName = row.Name;
+                    const rowPath = [...tablePath, rowIndex, 'Value'];
+                    findColorsRecursive(row.Value, rowPath, fileName, styleName, allParams, relativePath);
+                }
+            });
+        }
+        // FORMAT TYPE 3: Generic? Blueprint support
+        else if (Array.isArray(json?.Exports)) {
+            json.Exports.forEach((exportItem, exportIndex) => {
+                if (Array.isArray(exportItem.Data)) {
+                    // Uses export's ObjectName as a descriptive parent name
+                    const parentName = exportItem.ObjectName || `Export_${exportIndex}`;
+                    const basePath = ['Exports', exportIndex, 'Data'];
+                    // recursive search within the Data array of this export
+                    findColorsRecursive(exportItem.Data, basePath, fileName, parentName, allParams, relativePath);
+                }
+            });
+        }
+    }
+
+    const processFileObjects = (fileObjects, append = false) => {
+        let allParams = append ? [...colorParams] : [];
+        let newOriginalFiles = append ? { ...originalFiles } : {};
+
+        fileObjects.forEach(fileObj => {
+            if (append && newOriginalFiles[fileObj.relativePath]) {
+                return;
+            }
+            try {
+                const json = JSON.parse(fileObj.content);
+                newOriginalFiles[fileObj.relativePath] = json;
+                parseJsonAndExtractColors(json, fileObj.name, fileObj.relativePath, allParams);
+            } catch (error) {
+                console.error("Error processing file content:", fileObj.name, error);
+                alert(`Error processing file ${fileObj.name}.`);
+            }
         });
-      }
-      // FORMAT TYPE 2: RichText blueprints support
-      else if (json?.Exports?.[0]?.$type === "UAssetAPI.ExportTypes.DataTableExport, UAssetAPI" && json.Exports[0].Table?.Data) {
-          const tableData = json.Exports[0].Table.Data;
-          const tablePath = ['Exports', 0, 'Table', 'Data'];
 
-          tableData.forEach((row, rowIndex) => {
-              if (row.StructType === "RichTextStyleRow") {
-                  const styleName = row.Name;
-                  const rowPath = [...tablePath, rowIndex, 'Value'];
-                  findColorsRecursive(row.Value, rowPath, fileName, styleName, allParams, relativePath);
-              }
-          });
-      }
-  }
+        //  Extract folder list for filtering UI
+        const uniqueFolders = [...new Set(allParams.map(p => {
+            const lastSlash = p.relativePath.lastIndexOf('/');
+            return lastSlash > 0 ? p.relativePath.substring(0, lastSlash) : '/'; // root folder
+        }))];
+        setFolders(uniqueFolders.sort());
+        setSelectedFolders(new Set(uniqueFolders)); // Select all by default
 
-  const processFileObjects = (fileObjects, append = false) => {
-      let allParams = append ? [...colorParams] : [];
-      let newOriginalFiles = append ? {...originalFiles} : {};
+        if (!append) {
+            setHistory([allParams]);
+            setHistoryIndex(0);
+        } else {
+            recordHistory(allParams);
+        }
+        setOriginalFiles(newOriginalFiles);
+    };
 
-      fileObjects.forEach(fileObj => {
-          if (append && newOriginalFiles[fileObj.relativePath]) {
-              return;
-          }
-          try {
-              const json = JSON.parse(fileObj.content);
-              newOriginalFiles[fileObj.relativePath] = json;
-              parseJsonAndExtractColors(json, fileObj.name, fileObj.relativePath, allParams);
-          } catch (error) {
-              console.error("Error processing file content:", fileObj.name, error);
-              alert(`Error processing file ${fileObj.name}.`);
-          }
-      });
+    const processFiles = async (files, append) => {
+        const fileObjects = [];
+        const promises = files.map(file => {
+            return new Promise((resolve, reject) => {
+                if (file.name.endsWith('.json')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        fileObjects.push({
+                            name: file.name,
+                            content: e.target.result,
+                            relativePath: file.webkitRelativePath || file.name
+                        });
+                        resolve();
+                    };
+                    reader.onerror = (error) => reject(error);
+                    reader.readAsText(file);
+                } else {
+                    resolve(); 
+                }
+            });
+        });
 
-      //  Extract folder list for filtering UI
-      const uniqueFolders = [...new Set(allParams.map(p => {
-          const lastSlash = p.relativePath.lastIndexOf('/');
-          return lastSlash > 0 ? p.relativePath.substring(0, lastSlash) : '/'; // root folder
-      }))];
-      setFolders(uniqueFolders.sort());
-      setSelectedFolders(new Set(uniqueFolders)); // Select all by default
+        await Promise.all(promises);
+        processFileObjects(fileObjects, append);
+    };
 
-      setColorParams(allParams);
-      setOriginalFiles(newOriginalFiles);
-  };
+    const handleFileChange = (event) => {
+        const files = Array.from(event.target.files);
+        processFiles(files, colorParams.length > 0);
+    };
 
-  const handleFileChange = (event) => {
-    const files = Array.from(event.target.files);
-    processFiles(files, colorParams.length > 0);
-  };
-  
-const traverseFileTree = async (item, path, fileObjects) => {
-      path = path || "";
-      if (item.isFile) {
-          return new Promise(resolve => {
-              item.file(file => {
-                  const reader = new FileReader();
-                  reader.onload = (e) => {
-                      if (file.name.endsWith('.json')) {
-                          fileObjects.push({ 
-                              name: file.name, 
-                              content: e.target.result,
-                              relativePath: path ? `${path}/${file.name}` : file.name
-                          });
-                      }
-                      resolve();
-                  };
-                  reader.readAsText(file);
-              });
-          });
-      } else if (item.isDirectory) {
-          const dirReader = item.createReader();
-          // This loop fixes the WebEngine readEntries limitation of 100 max entries
-          let allEntries = [];
-          let currentEntries = await new Promise(resolve => dirReader.readEntries(resolve));
-          while (currentEntries.length > 0) {
-              allEntries = allEntries.concat(currentEntries);
-              currentEntries = await new Promise(resolve => dirReader.readEntries(resolve));
-          }
-          for (let i = 0; i < allEntries.length; i++) {
-              await traverseFileTree(allEntries[i], path ? `${path}/${item.name}` : item.name, fileObjects);
-          }
-      }
-  };
-
-  const handleDragOver = (event) => {
-    event.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (event) => {
-    event.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = async (event) => {
-    event.preventDefault();
-    setIsDragging(false);
-    
-    const fileObjects = [];
-    if (event.dataTransfer.items) {
-        const promises = [];
-        for (let i = 0; i < event.dataTransfer.items.length; i++) {
-            const item = event.dataTransfer.items[i].webkitGetAsEntry();
-            if (item) {
-                promises.push(traverseFileTree(item, "", fileObjects));
+    const traverseFileTree = async (item, path, fileObjects) => {
+        path = path || "";
+        if (item.isFile) {
+            return new Promise(resolve => {
+                item.file(file => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        if (file.name.endsWith('.json')) {
+                            fileObjects.push({
+                                name: file.name,
+                                content: e.target.result,
+                                relativePath: path ? `${path}/${file.name}` : file.name
+                            });
+                        }
+                        resolve();
+                    };
+                    reader.readAsText(file);
+                });
+            });
+        } else if (item.isDirectory) {
+            const dirReader = item.createReader();
+            // This loop fixes the WebEngine readEntries limitation of 100 max entries
+            let allEntries = [];
+            let currentEntries = await new Promise(resolve => dirReader.readEntries(resolve));
+            while (currentEntries.length > 0) {
+                allEntries = allEntries.concat(currentEntries);
+                currentEntries = await new Promise(resolve => dirReader.readEntries(resolve));
+            }
+            for (let i = 0; i < allEntries.length; i++) {
+                await traverseFileTree(allEntries[i], path ? `${path}/${item.name}` : item.name, fileObjects);
             }
         }
-        await Promise.all(promises);
-        processFileObjects(fileObjects, colorParams.length > 0);
-    }
-  };
+    };
+
+    const handleDragOver = (event) => {
+        event.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (event) => {
+        event.preventDefault();
+        setIsDragging(false);
+    };
+
+    const handleDrop = async (event) => {
+        event.preventDefault();
+        setIsDragging(false);
+
+        const fileObjects = [];
+        if (event.dataTransfer.items) {
+            const promises = [];
+            for (let i = 0; i < event.dataTransfer.items.length; i++) {
+                const item = event.dataTransfer.items[i].webkitGetAsEntry();
+                if (item) {
+                    promises.push(traverseFileTree(item, "", fileObjects));
+                }
+            }
+            await Promise.all(promises);
+            processFileObjects(fileObjects, colorParams.length > 0);
+        }
+    };
 
 
-  const handleParamChange = (id, newRgba) => {
-    setColorParams(prevParams =>
-      prevParams.map(p => (p.id === id ? { ...p, rgba: newRgba } : p))
-    );
-  };
+    const handleParamChange = (id, newRgba) => {
+        const newParams = colorParams.map(p => (p.id === id ? { ...p, rgba: newRgba } : p));
+        recordHistory(newParams);
+    };
 
-  
-const handleSelectionChange = (id) => {
-  const index = filteredParams.findIndex(p => p.id === id);
-  if (index === -1) return;
 
-  setSelectedParams(prev => {
-    let next = new Set(prev);
+    const handleSelectionChange = (id) => {
+        const index = filteredParams.findIndex(p => p.id === id);
+        if (index === -1) return;
 
-    if ((shiftKeyPressed || altKeyPressed) && lastSelectedIndex !== null) {
-      const start = Math.min(lastSelectedIndex, index);
-      const end = Math.max(lastSelectedIndex, index);
-      for (let i = start; i <= end; i++) {
-        const currentId = filteredParams[i].id;
-        if (altKeyPressed) {
-          next.delete(currentId); // deselect range
+        setSelectedParams(prev => {
+            let next = new Set(prev);
+
+            if ((shiftKeyPressed || altKeyPressed) && lastSelectedIndex !== null) {
+                const start = Math.min(lastSelectedIndex, index);
+                const end = Math.max(lastSelectedIndex, index);
+                for (let i = start; i <= end; i++) {
+                    const currentId = filteredParams[i].id;
+                    if (altKeyPressed) {
+                        next.delete(currentId); // deselect range
+                    } else {
+                        next.add(currentId);    // select range
+                    }
+                }
+            } else {
+                if (next.has(id)) {
+                    next.delete(id);
+                } else {
+                    next.add(id);
+                }
+            }
+
+            return next;
+        });
+
+        setLastSelectedIndex(index);
+    };
+
+
+
+    const handleSelectAll = () => {
+        if (selectedParams.size === filteredParams.length) {
+            setSelectedParams(new Set());
         } else {
-          next.add(currentId);    // select range
+            setSelectedParams(new Set(filteredParams.map(p => p.id)));
         }
-      }
-    } else {
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-    }
+    };
 
-    return next;
-  });
+    const applyColor = (p, newColorRgba, options = {}) => {
+        const { ignoreGrayscaleCheck = false } = options;
+        const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
 
-  setLastSelectedIndex(index);
-};
-
-    
-
-  const handleSelectAll = () => {
-    if (selectedParams.size === filteredParams.length) {
-      setSelectedParams(new Set());
-    } else {
-      setSelectedParams(new Set(filteredParams.map(p => p.id)));
-    }
-  };
-
-  const applyColor = (p, newColorRgba, options = {}) => {
-    const { ignoreGrayscaleCheck = false } = options;
-    const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
-
-    //  added 'ignoreGrayscaleCheck' to bypass it when needed
-    if (!ignoreGrayscaleCheck && ignoreGrayscale && isGrayscale) {
-        return p.rgba;
-    }
-
-    if (preserveIntensity) {
-        const originalIntensity = Math.max(p.rgba.R, p.rgba.G, p.rgba.B);
-        if (originalIntensity === 0) return { ...p.rgba, R: 0, G: 0, B: 0 };
-
-        const maxNew = Math.max(newColorRgba.r, newColorRgba.g, newColorRgba.b);
-        if (maxNew === 0) return { ...p.rgba, R: 0, G: 0, B: 0 };
-
-        const normalizedNewR = newColorRgba.r / maxNew;
-        const normalizedNewG = newColorRgba.g / maxNew;
-        const normalizedNewB = newColorRgba.b / maxNew;
-
-        return {
-            ...p.rgba,
-            R: normalizedNewR * originalIntensity,
-            G: normalizedNewG * originalIntensity,
-            B: normalizedNewB * originalIntensity,
-        };
-    } else {
-        return { ...p.rgba, R: newColorRgba.r, G: newColorRgba.g, B: newColorRgba.b };
-    }
-  };
-
-  const applyMasterColor = () => {
-    if (selectedParams.size === 0) {
-        alert("No parameters selected. Please select at least one parameter before applying the master color.");
-        return;
-    }
-    const newRgba = hexToRgba(masterColor);
-    setColorParams(prevParams =>
-      prevParams.map(p => {
-        if (selectedParams.has(p.id)) {
-            return { ...p, rgba: applyColor(p, newRgba) };
+        //  added 'ignoreGrayscaleCheck' to bypass it when needed
+        if (!ignoreGrayscaleCheck && ignoreGrayscale && isGrayscale) {
+            return p.rgba;
         }
-        return p;
-      })
-    );
-  };
-  
-  const applyHueShift = () => {
-    if (selectedParams.size === 0) {
-        alert("No parameters selected. Please select at least one parameter before applying the hue shift.");
-        return;
-    }
 
-    setColorParams(prevParams =>
-      prevParams.map(p => {
-        if (selectedParams.has(p.id)) {
-            const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
-            if (ignoreGrayscale && isGrayscale) return p;
-
+        if (preserveIntensity) {
             const originalIntensity = Math.max(p.rgba.R, p.rgba.G, p.rgba.B);
-            const [h, s, l] = rgbToHsl(p.rgba.R, p.rgba.G, p.rgba.B);
-            
-            let newHue = h + (hueShiftValue / 360);
-            if (newHue < 0) newHue += 1;
-            if (newHue > 1) newHue -= 1;
-            
-            const [r, g, b] = hslToRgb(newHue, s, l);
+            if (originalIntensity === 0) return { ...p.rgba, R: 0, G: 0, B: 0 };
 
-            return { ...p, rgba: { ...p.rgba, R: r * originalIntensity, G: g * originalIntensity, B: b * originalIntensity } };
+            const maxNew = Math.max(newColorRgba.r, newColorRgba.g, newColorRgba.b);
+            if (maxNew === 0) return { ...p.rgba, R: 0, G: 0, B: 0 };
+
+            const normalizedNewR = newColorRgba.r / maxNew;
+            const normalizedNewG = newColorRgba.g / maxNew;
+            const normalizedNewB = newColorRgba.b / maxNew;
+
+            return {
+                ...p.rgba,
+                R: normalizedNewR * originalIntensity,
+                G: normalizedNewG * originalIntensity,
+                B: normalizedNewB * originalIntensity,
+            };
+        } else {
+            return { ...p.rgba, R: newColorRgba.r, G: newColorRgba.g, B: newColorRgba.b };
         }
-        return p;
-      })
-    );
-    
-    setHueShiftValue(0);
-  };
-  
-  const applyShuffle = () => {
-    if (selectedParams.size === 0) {
-        alert("No parameters selected. Please select at least one parameter before applying shuffle.");
-        return;
-    }
+    };
 
-    const selectedFiles = [...new Set(colorParams.filter(p => selectedParams.has(p.id)).map(p => p.fileName))];
-    const fileToColorMap = {};
-    selectedFiles.forEach((fileName, index) => {
-        fileToColorMap[fileName] = shuffleColors[index % shuffleColors.length];
-    });
-
-    setColorParams(prevParams =>
-      prevParams.map(p => {
-        if (selectedParams.has(p.id)) {
-            const newColorHex = fileToColorMap[p.fileName];
-            if (newColorHex) {
-                const newRgba = hexToRgba(newColorHex);
+    const applyMasterColor = () => {
+        if (selectedParams.size === 0) {
+            alert("No parameters selected. Please select at least one parameter before applying the master color.");
+            return;
+        }
+        const newRgba = hexToRgba(masterColor);
+        const newParams = colorParams.map(p => {
+            if (selectedParams.has(p.id)) {
                 return { ...p, rgba: applyColor(p, newRgba) };
             }
+            return p;
+        });
+        recordHistory(newParams);
+    };
+
+    const applyHueShift = () => {
+        if (selectedParams.size === 0) {
+            alert("No parameters selected. Please select at least one parameter before applying the hue shift.");
+            return;
         }
-        return p;
-      })
-    );
-  };
-  
-  const handleShuffleColorChange = (index, color) => {
-    const newShuffleColors = [...shuffleColors];
-    newShuffleColors[index] = color;
-    setShuffleColors(newShuffleColors);
-  };
 
+        const newParams = colorParams.map(p => {
+            if (selectedParams.has(p.id)) {
+                const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
+                if (ignoreGrayscale && isGrayscale) return p;
 
-const handleSave = async () => {
-    if (colorParams.length === 0) {
-        alert("No parameters to save.");
-        return;
-    }
-    
-    setSaveStatus('Saving...');
+                const originalIntensity = Math.max(p.rgba.R, p.rgba.G, p.rgba.B);
+                const [h, s, l] = rgbToHsl(p.rgba.R, p.rgba.G, p.rgba.B);
 
-    const modifiedFiles = JSON.parse(JSON.stringify(originalFiles));
-    colorParams.forEach(param => {
-      // Use relativePath to get the right path
-      const fileToModify = modifiedFiles[param.relativePath]; 
-      if(fileToModify) {
-        setNestedValue(fileToModify, param.path, param.rgba);
-      }
-    });
-    
-    const filesToSave = new Set(Object.keys(modifiedFiles));
+                let newHue = h + (hueShiftValue / 360);
+                if (newHue < 0) newHue += 1;
+                if (newHue > 1) newHue -= 1;
 
-    try {
-        let dirHandle = directoryHandleRef.current;
-        // Asks for save path only one time
-        if (!dirHandle) {
-            dirHandle = await window.showDirectoryPicker();
-            directoryHandleRef.current = dirHandle;
+                const [r, g, b] = hslToRgb(newHue, s, l);
+
+                return { ...p, rgba: { ...p.rgba, R: r * originalIntensity, G: g * originalIntensity, B: b * originalIntensity } };
+            }
+            return p;
+        });
+        recordHistory(newParams);
+
+        setHueShiftValue(0);
+    };
+
+    const applyShuffle = () => {
+        if (selectedParams.size === 0) {
+            alert("No parameters selected. Please select at least one parameter before applying shuffle.");
+            return;
         }
-        const outputDirHandle = await dirHandle.getDirectoryHandle('output', { create: true });
 
-        for (const relativePath of filesToSave) {
-            const pathParts = relativePath.split('/');
-            const fileName = pathParts.pop(); // Gets file name
-            let currentDirHandle = outputDirHandle;
+        const selectedFiles = [...new Set(colorParams.filter(p => selectedParams.has(p.id)).map(p => p.fileName))];
+        const fileToColorMap = {};
+        selectedFiles.forEach((fileName, index) => {
+            fileToColorMap[fileName] = shuffleColors[index % shuffleColors.length];
+        });
 
-            // Make every subfolder needed
-            for (const part of pathParts) {
-                currentDirHandle = await currentDirHandle.getDirectoryHandle(part, { create: true });
+        const newParams = colorParams.map(p => {
+            if (selectedParams.has(p.id)) {
+                const newColorHex = fileToColorMap[p.fileName];
+                if (newColorHex) {
+                    const newRgba = hexToRgba(newColorHex);
+                    return { ...p, rgba: applyColor(p, newRgba) };
+                }
+            }
+            return p;
+        });
+        recordHistory(newParams);
+    };
+
+    const handleShuffleColorChange = (index, color) => {
+        const newShuffleColors = [...shuffleColors];
+        newShuffleColors[index] = color;
+        setShuffleColors(newShuffleColors);
+    };
+
+
+    const handleSave = async () => {
+        if (colorParams.length === 0) {
+            alert("No parameters to save.");
+            return;
+        }
+
+        setSaveStatus('Saving...');
+
+        const modifiedFiles = JSON.parse(JSON.stringify(originalFiles));
+        colorParams.forEach(param => {
+            // Use relativePath to get the right path
+            const fileToModify = modifiedFiles[param.relativePath];
+            if (fileToModify) {
+                setNestedValue(fileToModify, param.path, param.rgba);
+            }
+        });
+
+        const filesToSave = new Set(Object.keys(modifiedFiles));
+
+        try {
+            let dirHandle = directoryHandleRef.current;
+            // Asks for save path only one time
+            if (!dirHandle) {
+                dirHandle = await window.showDirectoryPicker();
+                directoryHandleRef.current = dirHandle;
+            }
+            const outputDirHandle = await dirHandle.getDirectoryHandle('output', { create: true });
+
+            for (const relativePath of filesToSave) {
+                const pathParts = relativePath.split('/');
+                const fileName = pathParts.pop(); // Gets file name
+                let currentDirHandle = outputDirHandle;
+
+                // Make every subfolder needed
+                for (const part of pathParts) {
+                    currentDirHandle = await currentDirHandle.getDirectoryHandle(part, { create: true });
+                }
+
+                // Write new files to the right folder
+                const fileHandle = await currentDirHandle.getFileHandle(fileName, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(JSON.stringify(modifiedFiles[relativePath], null, 2));
+                await writable.close();
             }
 
-            // Write new files to the right folder
-            const fileHandle = await currentDirHandle.getFileHandle(fileName, { create: true });
+            setSaveStatus(`All ${filesToSave.size} files saved to 'output' folder!`);
+
+        } catch (err) {
+            console.error("Error saving files:", err);
+            if (err.name !== 'AbortError') {
+                setSaveStatus(`Error: ${err.message}.`);
+            } else {
+                setSaveStatus('Save cancelled.');
+            }
+        }
+
+        setTimeout(() => setSaveStatus(''), 10000);
+    };
+
+    // Session saving feature
+    const sessionFileInputRef = useRef(null);
+
+    const handleExportSession = async () => {
+        if (selectedParams.size === 0) {
+            alert("No parameters selected to export. Please select at least one parameter.");
+            return;
+        }
+
+        const sessionData = colorParams
+            .filter(p => selectedParams.has(p.id))
+            .map(p => ({
+                relativePath: p.relativePath.replace(/\.json$/i, ''),
+                paramName: p.paramName,
+                rgba: p.rgba
+            }));
+
+        const jsonString = JSON.stringify(sessionData, null, 2);
+
+        try {
+            const dirHandle = await window.showDirectoryPicker({
+                title: "Select a folder to save the session file"
+            });
+
+            // Use the sessionName from state, and ensure it has a .json extension
+            const fileName = sessionName.endsWith('.rvfxp') ? sessionName : `${sessionName}.rvfxp`;
+
+            const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
             const writable = await fileHandle.createWritable();
-            await writable.write(JSON.stringify(modifiedFiles[relativePath], null, 2));
+            await writable.write(jsonString);
             await writable.close();
-        }
-        
-        setSaveStatus(`All ${filesToSave.size} files saved to 'output' folder!`);
+            alert(`Project exported successfully as ${fileName}`);
 
-    } catch (err) {
-        console.error("Error saving files:", err);
-        if (err.name !== 'AbortError') {
-           setSaveStatus(`Error: ${err.message}.`);
-        } else {
-           setSaveStatus('Save cancelled.');
-        }
-    }
-
-    setTimeout(() => setSaveStatus(''), 10000);
-  };
-
-const requestSort = (key) => {
-    let direction = 'ascending';
-    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-        direction = 'descending';
-    } else if (sortConfig.key === key && sortConfig.direction === 'descending') {
-        direction = 'none'; // Cycle back to no sort
-        key = null;
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const handleFolderToggle = (folder) => {
-      setSelectedFolders(prev => {
-          const newSet = new Set(prev);
-          if (newSet.has(folder)) {
-              newSet.delete(folder);
-          } else {
-              newSet.add(folder);
-          }
-          return newSet;
-      });
-  };
-  
-const filteredParams = useMemo(() => {
-    let sortableParams = [...colorParams];
-
-    if (sortConfig.key !== null && sortConfig.direction !== 'none') {
-        sortableParams.sort((a, b) => {
-            if (sortConfig.key === 'color') {
-                const [hA, sA, lA] = rgbToHsl(a.rgba.R, a.rgba.G, a.rgba.B);
-                const [hB, sB, lB] = rgbToHsl(b.rgba.R, b.rgba.G, b.rgba.B);
-
-                if (hA < hB) return -1;
-                if (hA > hB) return 1;
-                if (sA < sB) return -1;
-                if (sA > sB) return 1;
-                if (lA < lB) return -1;
-                if (lA > lB) return 1;
-                return 0;
+        } catch (err) {
+            console.error("Failed to export session:", err);
+            if (err.name !== 'AbortError') {
+                alert(`Failed to export session: ${err.message}`);
             }
-            return 0;
-        });
-        if (sortConfig.direction === 'descending') {
-            sortableParams.reverse();
         }
-    }
+    };
 
-    // Apply filters AFTER sorting or on the original array
-    let params = sortableParams;
+    const handleImportSession = () => {
+        // This just clicks the hidden file input
+        sessionFileInputRef.current.click();
+    };
 
-    // Filter by selected folders
-    if (folders.length > 0) {
-        params = params.filter(p => {
-            const lastSlash = p.relativePath.lastIndexOf('/');
-            const folder = lastSlash > 0 ? p.relativePath.substring(0, lastSlash) : '/';
-            return selectedFolders.has(folder);
+    const onSessionFileSelected = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const sessionData = JSON.parse(e.target.result);
+                if (!Array.isArray(sessionData)) throw new Error("Invalid project file format.");
+
+                let updatedCount = 0;
+                const sessionMap = new Map();
+                sessionData.forEach(item => {
+                    // The key in the project file doesn't have .json
+                    const key = `${item.relativePath}-${item.paramName}`;
+                    sessionMap.set(key, item.rgba);
+                });
+
+                const newParams = colorParams.map(p => {
+                    // We remove .json from the current parameter's path to match the key
+                    const key = `${p.relativePath.replace(/\.json$/i, '')}-${p.paramName}`;
+                    if (sessionMap.has(key)) {
+                        updatedCount++;
+                        return { ...p, rgba: sessionMap.get(key) };
+                    }
+                    return p;
+                });
+
+                recordHistory(newParams);
+                alert(`Project imported successfully! ${updatedCount} parameters were updated.`);
+
+            } catch (error) {
+                console.error("Failed to import session:", error);
+                alert(`Failed to import session: ${error.message}`);
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = null;
+    };
+
+    const requestSort = (key) => {
+        let direction = 'ascending';
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
+        } else if (sortConfig.key === key && sortConfig.direction === 'descending') {
+            direction = 'none'; // Cycle back to no sort
+            key = null;
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const handleFolderToggle = (folder) => {
+        setSelectedFolders(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(folder)) {
+                newSet.delete(folder);
+            } else {
+                newSet.add(folder);
+            }
+            return newSet;
         });
-    }
+    };
 
-    if (!showGrayscale) {
-        params = params.filter(p => p.rgba.R !== p.rgba.G || p.rgba.G !== p.rgba.B);
-    }
+    const filteredParams = useMemo(() => {
+        let sortableParams = [...colorParams];
 
-    if (searchTerm) {
-        params = params.filter(p => 
-          p.paramName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          p.fileName.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }
-    
-    return params;
-  }, [colorParams, searchTerm, showGrayscale, selectedFolders, folders, sortConfig]);
+        if (sortConfig.key !== null && sortConfig.direction !== 'none') {
+            sortableParams.sort((a, b) => {
+                if (sortConfig.key === 'color') {
+                    const [hA, sA, lA] = rgbToHsl(a.rgba.R, a.rgba.G, a.rgba.B);
+                    const [hB, sB, lB] = rgbToHsl(b.rgba.R, b.rgba.G, b.rgba.B);
 
-  return (
-    <div style={{ backgroundColor: 'var(--bg-4)', color: 'var(--text-3)' }} className="min-h-screen p-6">
-      <div className="w-full">
-        <div className="relative group p-4 border-2 particle-header" style={{ borderColor: 'var(--bg-2)'}}>
-            <Particles />
-            <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-main)', zIndex: 2 }}></div>
-            <div className="flex items-center gap-4 relative" style={{ zIndex: 1 }}>
-                <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className="h-24 filter brightness-0 invert" />
-                {/* New container with flexbox alignment */}
-                <div className="flex items-baseline gap-3">
-                    <h1 className="text-5xl font-bold" style={{ color: 'var(--text-1)' }}>Rivals VFX Editor</h1>
-                    <h2 className="text-1xl font-medium" style={{ color: 'var(--text-4)' }}>v1.1.0</h2>
+                    if (hA < hB) return -1;
+                    if (hA > hB) return 1;
+                    if (sA < sB) return -1;
+                    if (sA > sB) return 1;
+                    if (lA < lB) return -1;
+                    if (lA > lB) return 1;
+                    return 0;
+                }
+                return 0;
+            });
+            if (sortConfig.direction === 'descending') {
+                sortableParams.reverse();
+            }
+        }
+
+        // Apply filters AFTER sorting or on the original array
+        let params = sortableParams;
+
+        // Filter by selected folders
+        if (folders.length > 0) {
+            params = params.filter(p => {
+                const lastSlash = p.relativePath.lastIndexOf('/');
+                const folder = lastSlash > 0 ? p.relativePath.substring(0, lastSlash) : '/';
+                return selectedFolders.has(folder);
+            });
+        }
+
+        if (!showGrayscale) {
+            params = params.filter(p => p.rgba.R !== p.rgba.G || p.rgba.G !== p.rgba.B);
+        }
+
+        if (searchTerm) {
+            params = params.filter(p =>
+                p.paramName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                p.fileName.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+        }
+
+        return params;
+    }, [colorParams, searchTerm, showGrayscale, selectedFolders, folders, sortConfig]);
+
+    return (
+        <div style={{ backgroundColor: 'var(--bg-4)', color: 'var(--text-3)' }} className="min-h-screen p-6">
+            <div className="w-full">
+                <div className="relative group p-4 border-2 particle-header" style={{ borderColor: 'var(--bg-2)' }}>
+                            {/* Reset button */}
+                            <button
+                                ref={resetButtonRef}
+                                title="Long press to Reset"
+                                className="absolute top-1 right-2 p-2 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors z-10"
+                                onMouseDown={handleResetPress}
+                                onMouseUp={handleResetRelease}
+                                onMouseLeave={handleResetRelease}
+                            >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 6 6 18"/>
+                                <path d="m6 6 12 12"/>
+                            </svg>
+                        </button>
+                    <Particles />
+                    <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-main)', zIndex: 2 }}></div>
+                    <div className="flex items-center gap-4 relative" style={{ zIndex: 1 }}>
+                        <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className="h-24 filter brightness-0 invert" />
+                        <div className="flex items-baseline gap-3">
+                            <h1 className="text-5xl font-normal" style={{ color: 'var(--text-1)' }}>Rivals VFX Editor</h1>
+                            <h2 className="text-1xl font-medium" style={{ color: 'var(--text-4)' }}>v1.2.0</h2>
+                        </div>
+                    </div>
+                    <span className="absolute bottom-2 right-4 text-xs" style={{ color: 'var(--text-4)', zIndex: 1 }}>
+                        by Saturn
+                    </span>
                 </div>
-            </div>
-            <span className="absolute bottom-2 right-4 text-xs" style={{ color: 'var(--text-4)', zIndex: 1 }}>
-                by Saturn
-            </span>
-        </div>
-        
-        <div className="my-8">
-            {colorParams.length > 0 ? (
-                <div className="grid grid-cols-1 lg:grid-cols-10 gap-8">
-                    <div className="lg:col-span-3">
-                        <StyledPanel title="Global Controls">
-                            <div className="flex flex-col space-y-6">
-                                <div className="space-y-2">
-                                    <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Single Color</h3>
-                                        <div className="flex items-center space-x-4">
-                                            <div className="flex flex-col items-center gap-2">
-                                                <input 
-                                                    type="color" 
-                                                    value={masterColor} 
-                                                    onChange={(e) => setMasterColor(e.target.value)} 
-                                                    className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}
-                                                />
-                                                <input 
-                                                    type="text" 
-                                                    value={masterColor.toUpperCase()} 
-                                                    onChange={(e) => setMasterColor(e.target.value)}
-                                                    className="w-20 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none"
-                                                    style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
-                                                    maxLength="7"
-                                                />
-                                            </div>
-                                            <button onClick={applyMasterColor} className="flex-grow px-4 py-3 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
-                                                Apply Single
-                                            </button>
-                                        </div>
-                                </div>
-                                <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
-                                     <div className="flex justify-between items-center">
-                                        <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Hue Shift</h3>
-                                        <span className="font-mono text-lg" style={{ color: 'var(--text-3)' }}>{hueShiftValue}°</span>
-                                     </div>
-                                     <div>
-                                        <input id="hue-shift" type="range" min="-180" max="180" value={hueShiftValue} 
-                                            onChange={(e) => setHueShiftValue(parseInt(e.target.value))}
-                                            onDoubleClick={() => setHueShiftValue(0)}
-                                            className="w-full h-2 rounded-none appearance-none cursor-pointer" />
-                                    </div>
-                                    <button onClick={applyHueShift} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
-                                        Apply Hue Shift
-                                    </button>
-                                </div>
-                                <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
-                                     <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Color Shuffle</h3>
-                                        <div className="flex justify-around items-center">
-                                            {shuffleColors.map((color, index) => (
-                                                <div key={index} className="flex flex-col items-center gap-2">
-                                                    <input 
-                                                        type="color" 
-                                                        value={color} 
-                                                        onChange={(e) => handleShuffleColorChange(index, e.target.value)} 
+
+                <div className="my-8">
+                    {colorParams.length > 0 ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-10 gap-8">
+                            <div className="lg:col-span-3">
+                                <StyledPanel title="Global Controls">
+                                    <div className="flex flex-col space-y-6">
+                                        <div className="space-y-2">
+                                            <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Single Color</h3>
+                                            <div className="flex items-center space-x-4">
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <input
+                                                        type="color"
+                                                        value={masterColor}
+                                                        onChange={(e) => setMasterColor(e.target.value)}
                                                         className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}
                                                     />
-                                                    <input 
-                                                        type="text" 
-                                                        value={color.toUpperCase()} 
-                                                        onChange={(e) => handleShuffleColorChange(index, e.target.value)}
+                                                    <input
+                                                        type="text"
+                                                        value={masterColor.toUpperCase()}
+                                                        onChange={(e) => setMasterColor(e.target.value)}
                                                         className="w-20 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none"
                                                         style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
                                                         maxLength="7"
                                                     />
                                                 </div>
-                                            ))}
-                                        </div>
-                                     <button onClick={applyShuffle} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
-                                        Apply Shuffle
-                                    </button>
-                                </div>
-                                <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
-                                    <ToggleSwitch label="Preserve Intensity (Recommended)" enabled={preserveIntensity} setEnabled={setPreserveIntensity} />
-                                    <ToggleSwitch label="Ignore Grayscale (R=G=B)" enabled={ignoreGrayscale} setEnabled={setIgnoreGrayscale} />
-                                </div>
-                            </div>
-                        </StyledPanel>
-                    </div>
-                    
-                    <div className="lg:col-span-7">
-                      <StyledPanel title="Parameters" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
-                        <div className="p-4 flex flex-col gap-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
-                            <div className="flex justify-between items-center w-full gap-4">
-                                {/* Left group: folder filters */}
-                                <div className="flex-grow">
-                                    {folders.length > 1 && (
-                                        <div>
-                                            <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--text-3)' }}>Filter by Folder:</h4>
-                                            <div className="flex flex-wrap gap-x-4 gap-y-2">
-                                                {folders.map(folder => (
-                                                    <label key={folder} className="flex items-center text-sm cursor-pointer" style={{ color: 'var(--text-3)' }}>
-                                                        <input type="checkbox" checked={selectedFolders.has(folder)} onChange={() => handleFolderToggle(folder)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
-                                                        {folder === '/' ? 'Root' : folder}
-                                                    </label>
-                                                ))}
+                                                <button onClick={applyMasterColor} className="flex-grow px-4 py-3 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
+                                                    Apply Single
+                                                </button>
                                             </div>
                                         </div>
-                                    )}
-                                </div>
-
-                                {/* Right group: show filter, searchbox, save button */}
-                                <div className="flex-shrink-0 flex items-center gap-4">
-                                    <label className="flex items-center text-sm cursor-pointer" style={{ color: 'var(--text-3)' }}>
-                                        <input type="checkbox" checked={showGrayscale} onChange={() => setShowGrayscale(!showGrayscale)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
-                                        Show Grayscale
-                                    </label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="Filter by name..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-full sm:w-64 px-3 py-2 rounded-none focus:outline-none focus:ring-2"
-                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
-                                    />
-                                    <div className="flex items-center gap-2">
-                                        {saveStatus && <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-4)' }}>{saveStatus}</span>}
-                                        <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path>
-                                            </svg>
-                                            Save Files
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <p className="text-sm" style={{ color: 'var(--text-4)' }}>{filteredParams.length} color parameters found.</p>
-                        </div>
-                        <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
-
-                          <table className="w-full text-sm text-left">
-                            <thead style={{ color: 'var(--text-4)' }}>
-                              <tr style={{ borderBottom: '2px solid var(--bg-2)' }}>
-                                <th scope="col" className="p-4">
-                                  <input type="checkbox" onChange={handleSelectAll} checked={filteredParams.length > 0 && selectedParams.size === filteredParams.length} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}/>
-                                </th>
-                                <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Path</th>
-                                <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Parameter Name</th>
-                                <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider cursor-pointer" onClick={() => requestSort('color')}>
-                                    <div className="flex items-center gap-2">
-                                        <span>Color</span>
-                                        {sortConfig.key === 'color' && sortConfig.direction === 'ascending' && <span>▲</span>}
-                                        {sortConfig.key === 'color' && sortConfig.direction === 'descending' && <span>▼</span>}
-                                    </div>
-                                </th>
-                                <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">R</th>
-                                <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">G</th>
-                                <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">B</th>
-                                <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">A</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredParams.map(p => {
-                                let displayRgba = p.rgba;
-                                let isPreviewing = false;
-
-                                if (selectedParams.has(p.id) && hueShiftValue !== 0) {
-                                    const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
-                                    if (! (ignoreGrayscale && isGrayscale) ) {
-                                        isPreviewing = true;
-                                        const originalIntensity = Math.max(p.rgba.R, p.rgba.G, p.rgba.B);
-                                        const [h, s, l] = rgbToHsl(p.rgba.R, p.rgba.G, p.rgba.B);
-                                        let newHue = h + (hueShiftValue / 360);
-                                        if (newHue < 0) newHue += 1;
-                                        if (newHue > 1) newHue -= 1;
-                                        const [r, g, b] = hslToRgb(newHue, s, l);
-                                        displayRgba = { ...p.rgba, R: r * originalIntensity, G: g * originalIntensity, B: b * originalIntensity };
-                                    }
-                                }
-                                
-                                const displayHexColor = rgbaToDisplayHex(displayRgba.R, displayRgba.G, displayRgba.B);
-
-                                return (
-                                  <tr key={p.id} className="hover:bg-opacity-50" style={{ borderBottom: '1px solid var(--bg-2)', backgroundColor: isPreviewing ? 'rgba(204, 255, 255, 0.05)' : 'transparent' }}>
-                                    <td className="w-4 p-4">
-                                        <input
-                                        type="checkbox"
-                                        checked={selectedParams.has(p.id)}
-                                        onChange={() => handleSelectionChange(p.id)}
-                                        className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0"
-                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}
-                                        />
-                                    </td>
-                                    <td className="px-6 py-4 font-medium whitespace-nowrap" style={{ color: 'var(--text-2)' }}>{p.relativePath}</td>
-                                    <td className="px-6 py-4">{p.paramName}</td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <input 
-                                                type="color" 
-                                                value={displayHexColor}
-                                                onChange={(e) => {
-                                                    const newColorRgba = hexToRgba(e.target.value);
-                                                    // call applyColor with the option bypassing the grayscale check
-                                                    const finalRgba = applyColor(p, newColorRgba, { ignoreGrayscaleCheck: true });
-                                                    handleParamChange(p.id, finalRgba);
-                                                }}
-                                                className="w-8 h-8 p-0 border-2 cursor-pointer"
-                                                style={{ backgroundColor: 'transparent', borderColor: 'var(--bg-1)' }}
-                                            />
-                                           <span className="font-mono">{displayHexColor.toUpperCase()}</span>
+                                        <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
+                                            <div className="flex justify-between items-center">
+                                                <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Hue Shift</h3>
+                                                <span className="font-mono text-lg" style={{ color: 'var(--text-3)' }}>{hueShiftValue}°</span>
+                                            </div>
+                                            <div>
+                                                <input id="hue-shift" type="range" min="-180" max="180" value={hueShiftValue}
+                                                    onChange={(e) => setHueShiftValue(parseInt(e.target.value))}
+                                                    onDoubleClick={() => setHueShiftValue(0)}
+                                                    className="w-full h-2 rounded-none appearance-none cursor-pointer" />
+                                            </div>
+                                            <button onClick={applyHueShift} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
+                                                Apply Hue Shift
+                                            </button>
                                         </div>
-                                    </td>
-                                    {['R', 'G', 'B', 'A'].map(channel => (
-                                      <td key={channel} className="px-2 py-2">
-                                        <input
-                                          type="number"
-                                          step="0.01"
-                                          value={(Number(p.rgba[channel]) || 0).toFixed(4)}
-                                          onChange={(e) => handleParamChange(p.id, { ...p.rgba, [channel]: parseFloat(e.target.value) || 0 })}
-                                          className="w-24 px-2 py-1 rounded-none text-center focus:outline-none focus:ring-2"
-                                          style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
-                                        />
-                                      </td>
-                                    ))}
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
+                                        <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
+                                            <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Color Shuffle</h3>
+                                            <div className="flex justify-around items-center">
+                                                {shuffleColors.map((color, index) => (
+                                                    <div key={index} className="flex flex-col items-center gap-2">
+                                                        <input
+                                                            type="color"
+                                                            value={color}
+                                                            onChange={(e) => handleShuffleColorChange(index, e.target.value)}
+                                                            className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}
+                                                        />
+                                                        <input
+                                                            type="text"
+                                                            value={color.toUpperCase()}
+                                                            onChange={(e) => handleShuffleColorChange(index, e.target.value)}
+                                                            className="w-20 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none"
+                                                            style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
+                                                            maxLength="7"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <button onClick={applyShuffle} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={selectedParams.size === 0}>
+                                                Apply Shuffle
+                                            </button>
+                                        </div>
+                                        <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
+                                            <ToggleSwitch label="Preserve Intensity (Recommended)" enabled={preserveIntensity} setEnabled={setPreserveIntensity} />
+                                            <ToggleSwitch label="Ignore Grayscale (R=G=B)" enabled={ignoreGrayscale} setEnabled={setIgnoreGrayscale} />
+                                        </div>
+                                    </div>
+                                </StyledPanel>
+                            </div>
+
+                            <div className="lg:col-span-7">
+                                <StyledPanel title="Parameters" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+                                    <input
+                                        type="file"
+                                        ref={sessionFileInputRef}
+                                        className="hidden"
+                                        accept=".rvfxp"
+                                        onChange={onSessionFileSelected}
+                                    />
+                                    <div className="p-4 flex flex-col gap-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
+                                        <div className="flex justify-between items-start w-full gap-4">
+                                            {/* Left group: folder filters */}
+                                            <div className="flex-grow">
+                                                {folders.length > 1 && (
+                                                    <div>
+                                                        <h4 className="text-sm font-medium mb-2" style={{ color: 'var(--text-3)' }}>Filter by Folder:</h4>
+                                                        <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                                            {folders.map(folder => (
+                                                                <label key={folder} className="flex items-center text-sm cursor-pointer" style={{ color: 'var(--text-3)' }}>
+                                                                    <input type="checkbox" checked={selectedFolders.has(folder)} onChange={() => handleFolderToggle(folder)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
+                                                                    {folder === '/' ? 'Root' : folder}
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Right group: controls */}
+                                            <div className="flex-shrink-0 flex flex-col items-end gap-4">
+                                                {/* Project Controls */}
+                                                <div className="flex items-center gap-2">
+                                                    <label htmlFor="sessionNameInput" className="text-sm" style={{ color: 'var(--text-3)' }}>Project Filename:</label>
+                                                    <input
+                                                        id="sessionNameInput"
+                                                        type="text"
+                                                        value={sessionName}
+                                                        onChange={(e) => setSessionName(e.target.value)}
+                                                        className="w-48 px-3 py-1 rounded-none focus:outline-none focus:ring-2"
+                                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
+                                                    />
+                                                    <span className="text-sm" style={{ color: 'var(--text-4)' }}>.rvfxp</span>
+                                                </div>
+
+                                                {/* Init Controls */}
+                                                <div className="flex items-center gap-4">
+                                                    <label className="flex items-center text-sm cursor-pointer" style={{ color: 'var(--text-3)' }}>
+                                                        <input type="checkbox" checked={showGrayscale} onChange={() => setShowGrayscale(!showGrayscale)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
+                                                        Show Grayscale
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Filter by name..."
+                                                        value={searchTerm}
+                                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                                        className="w-full sm:w-64 px-3 py-2 rounded-none focus:outline-none focus:ring-2"
+                                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
+                                                    />
+                                                    <div className="flex items-center gap-2">
+                                                        {saveStatus && <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-4)' }}>{saveStatus}</span>}
+                                                        <button onClick={handleUndo} title="Undo (Ctrl+Z)" className="flex items-center justify-center p-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }} disabled={historyIndex === 0}>
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                                                        </button>
+                                                        <button onClick={handleRedo} title="Redo (Ctrl+Y or Shift+Ctrl+Z)" className="flex items-center justify-center p-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }} disabled={historyIndex >= history.length - 1}>
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                                        </button>
+                                                        <button onClick={handleImportSession} title="Import Project" className="flex items-center gap-2 px-3 py-2 font-medium rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }}>
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                                                        </button>
+                                                        <button onClick={handleExportSession} title="Export Selected to Project" className="flex items-center gap-2 px-3 py-2 font-medium rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }}>
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                                                        </button>
+                                                        <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
+                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path>
+                                                            </svg>
+                                                            Save JSON
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm" style={{ color: 'var(--text-4)' }}>{filteredParams.length} color parameters found.</p>
+                                    </div>
+                                    <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
+                                        <table className="w-full text-sm text-left">
+                                            <thead style={{ color: 'var(--text-4)' }}>
+                                                <tr style={{ borderBottom: '2px solid var(--bg-2)' }}>
+                                                    <th scope="col" className="p-4">
+                                                        <input type="checkbox" onChange={handleSelectAll} checked={filteredParams.length > 0 && selectedParams.size === filteredParams.length} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
+                                                    </th>
+                                                    <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Path</th>
+                                                    <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider">Parameter Name</th>
+                                                    <th scope="col" className="px-6 py-3 font-medium uppercase tracking-wider cursor-pointer" onClick={() => requestSort('color')}>
+                                                        <div className="flex items-center gap-2">
+                                                            <span>Color</span>
+                                                            {sortConfig.key === 'color' && sortConfig.direction === 'ascending' && <span>▲</span>}
+                                                            {sortConfig.key === 'color' && sortConfig.direction === 'descending' && <span>▼</span>}
+                                                        </div>
+                                                    </th>
+                                                    <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">R</th>
+                                                    <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">G</th>
+                                                    <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">B</th>
+                                                    <th scope="col" className="px-6 py-3 text-center font-medium uppercase tracking-wider">A</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filteredParams.map(p => {
+                                                    let displayRgba = p.rgba;
+                                                    let isPreviewing = false;
+
+                                                    if (selectedParams.has(p.id) && hueShiftValue !== 0) {
+                                                        const isGrayscale = p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B;
+                                                        if (!(ignoreGrayscale && isGrayscale)) {
+                                                            isPreviewing = true;
+                                                            const originalIntensity = Math.max(p.rgba.R, p.rgba.G, p.rgba.B);
+                                                            const [h, s, l] = rgbToHsl(p.rgba.R, p.rgba.G, p.rgba.B);
+                                                            let newHue = h + (hueShiftValue / 360);
+                                                            if (newHue < 0) newHue += 1;
+                                                            if (newHue > 1) newHue -= 1;
+                                                            const [r, g, b] = hslToRgb(newHue, s, l);
+                                                            displayRgba = { ...p.rgba, R: r * originalIntensity, G: g * originalIntensity, B: b * originalIntensity };
+                                                        }
+                                                    }
+
+                                                    const displayHexColor = rgbaToDisplayHex(displayRgba.R, displayRgba.G, displayRgba.B);
+
+                                                    return (
+                                                        <tr key={p.id} className="hover:bg-opacity-50" style={{ borderBottom: '1px solid var(--bg-2)', backgroundColor: isPreviewing ? 'rgba(204, 255, 255, 0.05)' : 'transparent' }}>
+                                                            <td className="w-4 p-4">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedParams.has(p.id)}
+                                                                    onChange={() => handleSelectionChange(p.id)}
+                                                                    className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0"
+                                                                    style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}
+                                                                />
+                                                            </td>
+                                                            <td className="px-6 py-4 font-medium whitespace-nowrap" style={{ color: 'var(--text-2)' }}>{p.relativePath.replace(/\.json$/i, '')}</td>
+                                                            <td className="px-6 py-4">{p.paramName}</td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex items-center gap-3">
+                                                                    <input
+                                                                        type="color"
+                                                                        value={displayHexColor}
+                                                                        onChange={(e) => {
+                                                                            const newColorRgba = hexToRgba(e.target.value);
+                                                                            // call applyColor with the option bypassing the grayscale check
+                                                                            const finalRgba = applyColor(p, newColorRgba, { ignoreGrayscaleCheck: true });
+                                                                            handleParamChange(p.id, finalRgba);
+                                                                        }}
+                                                                        className="w-8 h-8 p-0 border-2 cursor-pointer"
+                                                                        style={{ backgroundColor: 'transparent', borderColor: 'var(--bg-1)' }}
+                                                                    />
+                                                                <EditableHexInput
+                                                                    initialHex={displayHexColor}
+                                                                    onCommit={(newHex) => {
+                                                                        const newColorRgba = hexToRgba(newHex);
+                                                                        const finalRgba = applyColor(p, newColorRgba, { ignoreGrayscaleCheck: true });
+                                                                        handleParamChange(p.id, finalRgba);
+                                                                    }}
+                                                                />                                                                
+                                                                </div>
+                                                            </td>
+                                                            {['R', 'G', 'B', 'A'].map(channel => (
+                                                                <td key={channel} className="px-2 py-2">
+                                                                    <input
+                                                                        type="number"
+                                                                        step="0.01"
+                                                                        value={(Number(p.rgba[channel]) || 0).toFixed(4)}
+                                                                        onChange={(e) => handleParamChange(p.id, { ...p.rgba, [channel]: parseFloat(e.target.value) || 0 })}
+                                                                        className="w-24 px-2 py-1 rounded-none text-center focus:outline-none focus:ring-2"
+                                                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)', 'ringColor': 'var(--accent-main)' }}
+                                                                    />
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </StyledPanel>
+                            </div>
                         </div>
-                      </StyledPanel>
-                    </div>
-                </div>
-            ) : (
-                <div className="my-8">
-                    <StyledPanel title="Load Files">
-                        <div 
-                            className={`text-center py-20 px-6 border-2 border-dashed transition-colors`}
-                            style={{ backgroundColor: 'var(--bg-2)', borderColor: isDragging ? 'var(--accent-main)' : 'var(--bg-1)' }}
-                            onDragOver={handleDragOver}
-                            onDragLeave={handleDragLeave}
-                            onDrop={handleDrop}
-                        >
-                            <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
-                                <svg className="mx-auto h-12 w-12" style={{ color: 'var(--text-4)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                    <path d="M9 15.5a1.5 1.5 0 0 0-3 0v1a1.5 1.5 0 0 0 3 0"></path>
-                                    <path d="M18 15.5a1.5 1.5 0 0 0-3 0v1a1.5 1.5 0 0 0 3 0"></path>
-                                </svg>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>No files loaded</h3>
-                                    <img src="./assets/images/shrug.png" alt="shrug emoji" className="h-6 w-6" />
+                    ) : (
+                        <div className="my-8">
+                            <StyledPanel title="Load Files">
+                                <div
+                                    className={`text-center py-20 px-6 border-2 border-dashed transition-colors`}
+                                    style={{ backgroundColor: 'var(--bg-2)', borderColor: isDragging ? 'var(--accent-main)' : 'var(--bg-1)' }}
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={handleDrop}
+                                >
+                                    <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                                        <svg className="mx-auto h-12 w-12" style={{ color: 'var(--text-4)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                            <polyline points="14 2 14 8 20 8"></polyline>
+                                            <path d="M9 15.5a1.5 1.5 0 0 0-3 0v1a1.5 1.5 0 0 0 3 0"></path>
+                                            <path d="M18 15.5a1.5 1.5 0 0 0-3 0v1a1.5 1.5 0 0 0 3 0"></path>
+                                        </svg>
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>No files loaded</h3>
+                                            <img src="./assets/images/shrug.png" alt="shrug emoji" className="h-6 w-6" />
+                                        </div>
+                                        <p className="mt-1 text-sm" style={{ color: 'var(--text-4)' }}>Drag and drop .json files or click here to begin.</p>
+                                        <input type='file' className="hidden" webkitdirectory="" directory="" onChange={handleFileChange} />
+                                    </label>
                                 </div>
-                                <p className="mt-1 text-sm" style={{ color: 'var(--text-4)' }}>Drag and drop .json files or click here to begin.</p>
-                                <input type='file' className="hidden" multiple accept=".json" onChange={handleFileChange} />
-                            </label>
+                            </StyledPanel>
                         </div>
-                    </StyledPanel>
+                    )}
                 </div>
-            )}
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 }
 
 // Render the app into the page

@@ -103,3 +103,8 @@ html {
         opacity: 0;
     }
 }
+
+/* Apply the custom font to the main title */
+.particle-header h1 {
+    font-family: 'Asciid', var(--font-main); /* Use Asciid, with DM Mono as a fallback */
+}

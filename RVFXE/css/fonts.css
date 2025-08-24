@@ -21,3 +21,11 @@
   font-weight: 500;
   src: url(../fonts/DMMono-Medium.ttf) format('truetype');
 }
+
+/* --- Asciid Font for the Title --- */
+@font-face {
+  font-family: 'asciid';
+  font-style: normal;
+  font-weight: 400;
+  src: url(../fonts/asciid.ttf) format('truetype');
+}
