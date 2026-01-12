@@ -1,11 +1,24 @@
 {
   "include_keywords": [
     "color",
-    "tint"
+    "tint",
+    "Enemy",
+    "Emiss",
+    "Diff"
   ],
-  "exclude_exact": [
-    "LinerColor_Offset&Softness",
+  "exclude_keywords": [
+    "Offset",
+    "uv",
     "ColorMaskChannel",
     "MaskColor_Enemy"
+  ],
+  "color_property_names": [
+    "ColorAndOpacity",
+    "SpecifiedColor",
+    "BaseColor",
+    "HighlightColor",
+    "FontTopColor",
+    "FontButtomColor",
+    "VectorParameter"
   ]
 }
