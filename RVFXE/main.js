@@ -574,7 +574,16 @@ function App() {
         // start animation cycle
         animationFrameRef.current = requestAnimationFrame(shakeEffect);
         // Timer to reset
-        resetTimerRef.current = setTimeout(() => {
+        resetTimerRef.current = setTimeout(async () => {
+            // Clear the backend cache so files are re-converted from originals
+            try {
+                await invoke('clear_cache');
+                setCacheInfo({ fileCount: 0, totalSizeBytes: 0 });
+                addDebugLog('Cache cleared on reset');
+            } catch (err) {
+                console.error('Failed to clear cache on reset:', err);
+            }
+
             setHistory([[]]);
             setHistoryIndex(0);
             setOriginalFiles({});
@@ -590,6 +599,7 @@ function App() {
             setPreserveIntensity(true);
             setIgnoreGrayscale(true);
             setShowGrayscale(true);
+            setUassetSourceMap({});
 
             cancelAnimationFrame(animationFrameRef.current); // Stop animation when complete
             if (resetButtonRef.current) {
@@ -1384,7 +1394,8 @@ function App() {
     };
 
     // === SAVE AS UASSET - Convert edited JSONs back to .uasset files ===
-    const handleSaveAsUasset = async () => {
+    // saveAll: if true, saves all files; if false, only saves files with detected edits
+    const handleSaveAsUasset = async (saveAll = false) => {
         // Check if we have uasset source files
         const uassetKeys = Object.keys(uassetSourceMap);
         if (uassetKeys.length === 0) {
@@ -1392,41 +1403,49 @@ function App() {
             return;
         }
 
-        // Determine which files have actually been edited
-        const editedFilePaths = new Set();
-        colorParams.forEach(param => {
-            const originalFile = originalFiles[param.relativePath];
-            if (!originalFile) return;
+        let filesToSave;
 
-            // Get the original value at this path
-            let originalValue = originalFile;
-            for (const key of param.path) {
-                if (originalValue && typeof originalValue === 'object') {
-                    originalValue = originalValue[key];
-                } else {
-                    originalValue = undefined;
-                    break;
+        if (saveAll) {
+            // Save all loaded files
+            filesToSave = uassetKeys;
+            addDebugLog(`Saving ALL ${filesToSave.length} files`);
+        } else {
+            // Determine which files have actually been edited
+            const editedFilePaths = new Set();
+            colorParams.forEach(param => {
+                const originalFile = originalFiles[param.relativePath];
+                if (!originalFile) return;
+
+                // Get the original value at this path
+                let originalValue = originalFile;
+                for (const key of param.path) {
+                    if (originalValue && typeof originalValue === 'object') {
+                        originalValue = originalValue[key];
+                    } else {
+                        originalValue = undefined;
+                        break;
+                    }
                 }
-            }
 
-            // Compare current value vs original
-            if (originalValue && (
-                param.rgba.R !== originalValue.R ||
-                param.rgba.G !== originalValue.G ||
-                param.rgba.B !== originalValue.B ||
-                param.rgba.A !== originalValue.A
-            )) {
-                editedFilePaths.add(param.relativePath);
-            }
-        });
+                // Compare current value vs original
+                if (originalValue && (
+                    param.rgba.R !== originalValue.R ||
+                    param.rgba.G !== originalValue.G ||
+                    param.rgba.B !== originalValue.B ||
+                    param.rgba.A !== originalValue.A
+                )) {
+                    editedFilePaths.add(param.relativePath);
+                }
+            });
 
-        if (editedFilePaths.size === 0) {
-            alert("No edited parameters to save. Make some changes first!");
-            return;
+            filesToSave = uassetKeys.filter(key => editedFilePaths.has(key));
+            addDebugLog(`Saving ${filesToSave.length} edited files (${editedFilePaths.size} detected edits)`);
+
+            if (filesToSave.length === 0) {
+                alert("No edited files detected. Hold Shift and click to force save all files.");
+                return;
+            }
         }
-
-        // Filter uassetKeys to only include edited files
-        const editedUassetKeys = uassetKeys.filter(key => editedFilePaths.has(key));
 
         try {
             // Select output folder
@@ -1440,7 +1459,7 @@ function App() {
 
             setSaveStatus('Saving UAsset files...');
             setIsConverting(true);
-            setConversionProgress({ current: 0, total: editedUassetKeys.length, fileName: 'Preparing...' });
+            setConversionProgress({ current: 0, total: filesToSave.length, fileName: 'Preparing...' });
 
             const { writeTextFile } = window.__TAURI__.fs;
 
@@ -1457,9 +1476,9 @@ function App() {
             const writePromises = [];
             const jsonPathsForConversion = [];
             let writeProgress = 0;
-            const totalToWrite = editedUassetKeys.filter(k => uassetSourceMap[k]?.jsonPath && modifiedFiles[k]).length;
+            const totalToWrite = filesToSave.filter(k => uassetSourceMap[k]?.jsonPath && modifiedFiles[k]).length;
 
-            for (const keyPath of editedUassetKeys) {
+            for (const keyPath of filesToSave) {
                 const sourceInfo = uassetSourceMap[keyPath];
                 if (sourceInfo && sourceInfo.jsonPath && modifiedFiles[keyPath]) {
                     const jsonContent = JSON.stringify(modifiedFiles[keyPath], null, 2);
@@ -1493,7 +1512,7 @@ function App() {
 
             // Wait for all writes to complete in parallel
             await Promise.all(writePromises);
-            addDebugLog(`Wrote ${jsonPathsForConversion.length} JSON files in parallel (${editedFilePaths.size} edited)`);
+            addDebugLog(`Wrote ${jsonPathsForConversion.length} JSON files in parallel`);
 
             if (jsonPathsForConversion.length === 0) {
                 alert("No JSON files were modified. Nothing to convert.");
@@ -1642,25 +1661,41 @@ function App() {
                     .toLowerCase();
             };
 
+            // Helper to check if paths match via suffix (one ends with the other)
+            const pathsMatchSuffix = (path1, path2) => {
+                if (!path1 || !path2) return false;
+                // Check if either path ends with the other (handles different root folders)
+                return path1.endsWith(path2) || path2.endsWith(path1);
+            };
+
             let updatedCount = 0;
 
             // Create a new array with updates applied
             const newColorParams = colorParams.map(param => {
                 const paramNormalizedPath = normalizePath(param.relativePath);
-                const paramFileName = getFileName(param.relativePath);
+                const paramFileName = getFileName(param.relativePath).toLowerCase().replace(/\.json$/i, '').replace(/\.uasset$/i, '');
 
-                // Try exact path match first
+                // 1. Try exact path match first
                 let matchingEntry = sessionData.find(entry => {
                     const entryNormalizedPath = normalizePath(entry.relativePath);
                     return entryNormalizedPath === paramNormalizedPath &&
                         entry.paramName === param.paramName;
                 });
 
-                // Fallback: try filename-only match
+                // 2. Try suffix match (handles different import root folders)
                 if (!matchingEntry) {
                     matchingEntry = sessionData.find(entry => {
-                        const entryFileName = getFileName(entry.relativePath);
-                        return entryFileName.toLowerCase() === paramFileName.toLowerCase() &&
+                        const entryNormalizedPath = normalizePath(entry.relativePath);
+                        return pathsMatchSuffix(entryNormalizedPath, paramNormalizedPath) &&
+                            entry.paramName === param.paramName;
+                    });
+                }
+
+                // 3. Fallback: try filename-only match
+                if (!matchingEntry) {
+                    matchingEntry = sessionData.find(entry => {
+                        const entryFileName = getFileName(entry.relativePath).toLowerCase().replace(/\.json$/i, '').replace(/\.uasset$/i, '');
+                        return entryFileName === paramFileName &&
                             entry.paramName === param.paramName;
                     });
                 }
@@ -1680,7 +1715,7 @@ function App() {
                 return param;
             });
 
-            setColorParams(newColorParams);
+            recordHistory(newColorParams);
             addDebugLog(`Updated ${updatedCount} parameters from import`);
 
             if (updatedCount > 0) {
@@ -1726,22 +1761,38 @@ function App() {
                         .toLowerCase();
                 };
 
+                const pathsMatchSuffix = (path1, path2) => {
+                    if (!path1 || !path2) return false;
+                    return path1.endsWith(path2) || path2.endsWith(path1);
+                };
+
                 let updatedCount = 0;
 
                 const newParams = colorParams.map(p => {
                     const normalizedPath = normalizePath(p.relativePath);
-                    const fileName = getFileName(p.relativePath);
+                    const fileName = getFileName(p.relativePath).toLowerCase().replace(/\.json$/i, '').replace(/\.uasset$/i, '');
 
+                    // 1. Exact path match
                     let matchingEntry = sessionData.find(entry => {
                         const entryNormalizedPath = normalizePath(entry.relativePath);
                         return entryNormalizedPath === normalizedPath &&
                             entry.paramName === p.paramName;
                     });
 
+                    // 2. Suffix match
                     if (!matchingEntry) {
                         matchingEntry = sessionData.find(entry => {
-                            const entryFileName = getFileName(entry.relativePath);
-                            return entryFileName.toLowerCase() === fileName.toLowerCase() &&
+                            const entryNormalizedPath = normalizePath(entry.relativePath);
+                            return pathsMatchSuffix(entryNormalizedPath, normalizedPath) &&
+                                entry.paramName === p.paramName;
+                        });
+                    }
+
+                    // 3. Filename-only match
+                    if (!matchingEntry) {
+                        matchingEntry = sessionData.find(entry => {
+                            const entryFileName = getFileName(entry.relativePath).toLowerCase().replace(/\.json$/i, '').replace(/\.uasset$/i, '');
+                            return entryFileName === fileName &&
                                 entry.paramName === p.paramName;
                         });
                     }
@@ -1761,7 +1812,7 @@ function App() {
                     return p;
                 });
 
-                setColorParams(newParams);
+                recordHistory(newParams);
 
                 if (updatedCount > 0) {
                     alert(`Project imported successfully! ${updatedCount} parameters were updated.`);
@@ -1952,7 +2003,7 @@ function App() {
                         <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className="h-24 filter brightness-0 invert" />
                         <div className="flex items-baseline gap-3">
                             <h1 className="text-5xl font-normal" style={{ color: 'var(--text-1)' }}>Rivals VFX Editor</h1>
-                            <h2 className="text-1xl font-medium" style={{ color: 'var(--text-4)' }}>v2.0.0</h2>
+                            <h2 className="text-1xl font-medium" style={{ color: 'var(--text-4)' }}>v2.0.1</h2>
                         </div>
                     </div>
                     <span className="absolute bottom-2 right-4 text-xs" style={{ color: 'var(--text-4)', zIndex: 1 }}>
@@ -2149,7 +2200,7 @@ function App() {
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                                                         </button>
                                                         {Object.keys(uassetSourceMap).length > 0 ? (
-                                                            <button onClick={handleSaveAsUasset} disabled={isConverting} className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
+                                                            <button onClick={(e) => handleSaveAsUasset(e.shiftKey)} disabled={isConverting} title="Save edited files (Shift+click to save ALL)" className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
                                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path>
                                                                 </svg>

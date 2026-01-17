@@ -1,6 +1,6 @@
 [package]
 name = "rivals-vfx-editor"
-version = "2.0.0"
+version = "2.0.1"
 description = "A simple yet powerful web-based editor for batch editing color parameters in Marvel Rivals' VFX material files."
 authors = ["Saturn"]
 edition = "2021"
