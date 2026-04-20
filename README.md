@@ -52,6 +52,9 @@ A powerful desktop editor for batch editing color parameters in Marvel Rivals' V
 4. **Use the Global Controls** in the left panel to make your desired changes.
 5. **Save your files** by clicking the green "Save UAsset" button. The modified files will be ready for paking.
 
+### **🧱 Requirements**
+To run the background asset extraction and parsing tool UAssetTool, you must have the **.NET 8.0 Runtime** installed on your system.
+* [Download .NET 8.0 Desktop Runtime (x64)](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-desktop-8.0.26-windows-x64-installer)
 
 ### ℹ️ acknowledgements
 - [UAssetToolRivals](https://github.com/XzantGaming/UassetToolRivals): included in this software as requirement for game files processing
