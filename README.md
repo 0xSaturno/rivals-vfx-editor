@@ -4,7 +4,7 @@
 [![Issues](https://img.shields.io/github/issues/0xSaturno/rivals-vfx-editor.svg?style=flat-square)](https://github.com/0xSaturno/rivals-vfx-editor/issues)
 [![CI Status](https://img.shields.io/github/actions/workflow/status/0xSaturno/rivals-vfx-editor/release.yml?label=CI)](https://github.com/0xSaturno/rivals-vfx-editor/actions)
 
-A powerful web-based editor for batch editing color parameters in Marvel Rivals' VFX material files.
+A powerful desktop editor for batch editing color parameters in Marvel Rivals' VFX material files.
 
 ## **✨ Features**
 
@@ -54,4 +54,4 @@ A powerful web-based editor for batch editing color parameters in Marvel Rivals'
 
 
 ### ℹ️ acknowledgements
-- [UAssetToolRivals](https://github.com/XzantGaming/UassetToolRivals): included in this software as requirement for asset conversion
+- [UAssetToolRivals](https://github.com/XzantGaming/UassetToolRivals): included in this software as requirement for game files processing
