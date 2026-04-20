@@ -1,10 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "rivals-vfx-editor",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "identifier": "com.rivals-vfx-editor.saturn",
   "build": {
-    "frontendDist": "./RVFXE"
+    "beforeDevCommand": {
+      "script": "npm run dev",
+      "cwd": "./RVFXE"
+    },
+    "beforeBuildCommand": {
+      "script": "npm run build",
+      "cwd": "./RVFXE"
+    },
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "./RVFXE/dist"
   },
   "app": {
     "withGlobalTauri": true,
@@ -12,7 +21,7 @@
       {
         "title": "Rivals VFX Editor",
         "width": 1440,
-        "height": 800,
+        "height": 920,
         "dragDropEnabled": true,
         "zoomHotkeysEnabled": true
       }
@@ -29,11 +38,7 @@
       "./build/icon.ico"
     ],
     "resources": {
-      "./RVFXE/assets": "assets",
-      "./RVFXE/css": "css",
-      "./RVFXE/fonts": "fonts",
-      "./RVFXE/js": "js",
-      "./UAssetAPI.Lightweight/UAssetCLI/bin/Release/net8.0/win-x64/publish/UAssetCLI.exe": "tools/UAssetCLI.exe"
+      "./UAssetToolRivals/src/UAssetTool/bin/Release/net8.0/win-x64/publish/UAssetTool.exe": "tools/UAssetTool.exe"
     }
   }
 }

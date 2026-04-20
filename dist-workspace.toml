@@ -13,7 +13,7 @@ installers = []
 targets = ["x86_64-pc-windows-msvc"]
 # Extra static files to include in each App (path relative to this Cargo.toml's dir)
 include = [
-        "./tools/UAssetCLI.exe"
+        "./tools/UAssetTool.exe"
 ]
 # Allow custom modifications to generated CI files
 allow-dirty = ["ci"]

@@ -3,12 +3,21 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+use tokio::sync::Mutex as TokioMutex;
+use base64::{Engine as _, engine::general_purpose};
+use reqwest;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // ============================================================================
 // STATE & TYPES
@@ -61,19 +70,29 @@ impl Default for FilterDictionary {
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub usmap_path: Option<String>,
+    #[serde(default)]
+    pub paks_path: Option<String>,
     pub show_detailed_errors: bool,
     #[serde(default)]
     pub auto_clear_cache: bool,
+    #[serde(default = "default_ui_scale")]
+    pub ui_scale: f64,
     #[serde(default)]
     pub filter_dictionary: FilterDictionary,
+}
+
+fn default_ui_scale() -> f64 {
+    1.0
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             usmap_path: None,
+            paks_path: None,
             show_detailed_errors: true,
             auto_clear_cache: false,
+            ui_scale: default_ui_scale(),
             filter_dictionary: FilterDictionary::default(),
         }
     }
@@ -90,6 +109,23 @@ pub struct CacheEntry {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct CacheIndex {
     pub entries: HashMap<String, CacheEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UsmapMeta {
+    pub file_name: String,
+    pub file_path: String,
+    pub fetched_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UsmapStatus {
+    pub installed: bool,
+    pub file_name: Option<String>,
+    pub file_path: Option<String>,
+    pub needs_update: bool,
+    pub latest_remote: Option<String>,
+    pub auto_managed: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -138,9 +174,16 @@ pub struct ConversionProgress {
     pub error: Option<String>,
 }
 
+pub struct UAssetToolProcess {
+    child: tokio::process::Child,
+    stdin: tokio::process::ChildStdin,
+    stdout: BufReader<tokio::process::ChildStdout>,
+}
+
 pub struct AppState {
     pub settings: Mutex<AppSettings>,
     pub cache_index: Mutex<CacheIndex>,
+    pub tool_process: TokioMutex<Option<UAssetToolProcess>>,
 }
 
 // ============================================================================
@@ -161,6 +204,17 @@ fn get_settings_path() -> PathBuf {
 
 fn get_cache_index_path() -> PathBuf {
     get_cache_dir().join("index.json")
+}
+
+fn get_usmap_dir() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("rivals-vfx-editor")
+        .join("mappings")
+}
+
+fn get_usmap_meta_path() -> PathBuf {
+    get_usmap_dir().join("latest.json")
 }
 
 fn load_settings() -> AppSettings {
@@ -257,19 +311,20 @@ fn compute_file_hash(path: &Path) -> Result<String, String> {
 }
 
 fn get_uasset_tool_path(app: &AppHandle) -> PathBuf {
-    // In development, use UAssetCLI from UAssetAPI.Lightweight
+    // In development, use UAssetTool from UAssetToolRivals submodule
     // In production, use the bundled resource
     let cwd = std::env::current_dir().unwrap_or_default();
     eprintln!("[DEBUG] Current working directory: {:?}", cwd);
 
     let dev_path = cwd
-        .join("UAssetAPI.Lightweight")
-        .join("UAssetCLI")
+        .join("UAssetToolRivals")
+        .join("src")
+        .join("UAssetTool")
         .join("bin")
         .join("Debug")
         .join("net8.0")
         .join("win-x64")
-        .join("UAssetCLI.exe");
+        .join("UAssetTool.exe");
 
     eprintln!(
         "[DEBUG] Checking dev path: {:?} exists={}",
@@ -283,14 +338,15 @@ fn get_uasset_tool_path(app: &AppHandle) -> PathBuf {
 
     // Try release build
     let release_path = cwd
-        .join("UAssetAPI.Lightweight")
-        .join("UAssetCLI")
+        .join("UAssetToolRivals")
+        .join("src")
+        .join("UAssetTool")
         .join("bin")
         .join("Release")
         .join("net8.0")
         .join("win-x64")
         .join("publish")
-        .join("UAssetCLI.exe");
+        .join("UAssetTool.exe");
 
     eprintln!(
         "[DEBUG] Checking release path: {:?} exists={}",
@@ -305,7 +361,7 @@ fn get_uasset_tool_path(app: &AppHandle) -> PathBuf {
     // Try tools folder next to executable (for organized distributions)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            let dist_path = exe_dir.join("tools").join("UAssetCLI.exe");
+            let dist_path = exe_dir.join("tools").join("UAssetTool.exe");
             eprintln!(
                 "[DEBUG] Checking dist path (tools): {:?} exists={}",
                 dist_path,
@@ -316,7 +372,7 @@ fn get_uasset_tool_path(app: &AppHandle) -> PathBuf {
             }
 
             // Also check directly next to exe (cargo-dist flattens includes)
-            let flat_path = exe_dir.join("UAssetCLI.exe");
+            let flat_path = exe_dir.join("UAssetTool.exe");
             eprintln!(
                 "[DEBUG] Checking dist path (flat): {:?} exists={}",
                 flat_path,
@@ -334,10 +390,120 @@ fn get_uasset_tool_path(app: &AppHandle) -> PathBuf {
         .resource_dir()
         .unwrap_or_default()
         .join("tools")
-        .join("UAssetCLI.exe");
+        .join("UAssetTool.exe");
 
     eprintln!("[DEBUG] Falling back to bundled path: {:?}", bundled_path);
     bundled_path
+}
+
+// ============================================================================
+// UASSETTOOL INTERACTIVE PROCESS MANAGEMENT
+// ============================================================================
+
+async fn get_or_spawn_tool<'a>(
+    process: &'a mut Option<UAssetToolProcess>,
+    tool_path: &Path,
+) -> Result<&'a mut UAssetToolProcess, String> {
+    // Check if existing process is still alive
+    let needs_spawn = match process.as_mut() {
+        Some(proc) => match proc.child.try_wait() {
+            Ok(None) => false, // Still running
+            Ok(Some(status)) => {
+                eprintln!("[DEBUG] UAssetTool process exited with: {}", status);
+                true
+            }
+            Err(e) => {
+                eprintln!("[DEBUG] UAssetTool process check failed: {}", e);
+                true
+            }
+        },
+        None => true,
+    };
+
+    if !needs_spawn {
+        return Ok(process.as_mut().unwrap());
+    }
+
+    *process = None;
+
+    *process = Some(spawn_tool_process(tool_path).await?);
+    Ok(process.as_mut().unwrap())
+}
+
+async fn spawn_tool_process(tool_path: &Path) -> Result<UAssetToolProcess, String> {
+    eprintln!(
+        "[DEBUG] Spawning UAssetTool interactive process: {:?}",
+        tool_path
+    );
+    let mut cmd = Command::new(tool_path);
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn UAssetTool: {}", e))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or("Failed to capture UAssetTool stdin")?;
+    let stdout = BufReader::new(
+        child
+            .stdout
+            .take()
+            .ok_or("Failed to capture UAssetTool stdout")?,
+    );
+
+    Ok(UAssetToolProcess {
+        child,
+        stdin,
+        stdout,
+    })
+}
+
+async fn send_tool_request(
+    proc: &mut UAssetToolProcess,
+    request: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let request_str = serde_json::to_string(request).map_err(|e| e.to_string())?;
+    proc.stdin
+        .write_all(request_str.as_bytes())
+        .await
+        .map_err(|e| format!("Failed to write to UAssetTool stdin: {}", e))?;
+    proc.stdin
+        .write_all(b"\n")
+        .await
+        .map_err(|e| format!("Failed to write newline to UAssetTool stdin: {}", e))?;
+    proc.stdin
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to flush UAssetTool stdin: {}", e))?;
+
+    // UAssetTool may print diagnostic messages (e.g. "PlatformData is null, attempting DataResources fallback...")
+    // before the actual JSON response. Skip non-JSON lines until we find one starting with '{'.
+    let mut response_line = String::new();
+    loop {
+        response_line.clear();
+        let bytes = proc
+            .stdout
+            .read_line(&mut response_line)
+            .await
+            .map_err(|e| format!("Failed to read UAssetTool response: {}", e))?;
+        if bytes == 0 {
+            return Err("UAssetTool process closed unexpectedly".to_string());
+        }
+        let trimmed = response_line.trim();
+        if trimmed.starts_with('{') {
+            return serde_json::from_str(trimmed)
+                .map_err(|e| format!("Failed to parse UAssetTool response: {} - raw: {}", e, response_line));
+        }
+        // Non-JSON diagnostic line — log and skip
+        eprintln!("[DEBUG] UAssetTool diagnostic: {}", trimmed);
+    }
 }
 
 // ============================================================================
@@ -376,6 +542,23 @@ fn set_detailed_errors(enabled: bool, state: State<AppState>) -> Result<(), Stri
 fn set_auto_clear_cache(enabled: bool, state: State<AppState>) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
     settings.auto_clear_cache = enabled;
+    save_settings(&settings)
+}
+
+#[tauri::command]
+fn set_ui_scale(scale: f64, state: State<AppState>) -> Result<(), String> {
+    let mut settings = state.settings.lock().unwrap();
+    let clamped_scale = scale.clamp(0.5, 3.0);
+    eprintln!("[DEBUG] Setting ui_scale: {} (requested: {})", clamped_scale, scale);
+    settings.ui_scale = clamped_scale;
+    save_settings(&settings)
+}
+
+#[tauri::command]
+fn set_paks_path(path: String, state: State<AppState>) -> Result<(), String> {
+    eprintln!("[DEBUG] Setting paks_path: {}", path);
+    let mut settings = state.settings.lock().unwrap();
+    settings.paks_path = Some(path);
     save_settings(&settings)
 }
 
@@ -435,6 +618,138 @@ fn clear_cache(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_hero_browser_cache_info() -> CacheInfo {
+    let cache_dir = get_hero_cache_dir();
+    let mut file_count: usize = 0;
+    let mut total_size = 0u64;
+
+    fn visit_dirs(dir: &Path, count: &mut usize, size: &mut u64) -> std::io::Result<()> {
+        if dir.is_dir() {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dirs(&path, count, size)?;
+                } else {
+                    *count += 1;
+                    *size += entry.metadata()?.len();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    if cache_dir.exists() {
+        for entry_name in &["icons", "roster.json", "locres_cache.json", "hero_table_extract", "locres_extract"] {
+            let path = cache_dir.join(entry_name);
+            if path.exists() {
+                if path.is_dir() {
+                    let _ = visit_dirs(&path, &mut file_count, &mut total_size);
+                } else {
+                    file_count += 1;
+                    total_size += path.metadata().map(|m| m.len()).unwrap_or(0);
+                }
+            }
+        }
+    }
+
+    CacheInfo {
+        file_count,
+        total_size_bytes: total_size,
+        cache_dir: cache_dir.to_string_lossy().to_string(),
+    }
+}
+
+#[tauri::command]
+fn get_vfx_cache_info() -> CacheInfo {
+    let vfx_dir = get_hero_cache_dir().join("vfx");
+    let mut file_count: usize = 0;
+    let mut total_size = 0u64;
+
+    fn visit_dirs(dir: &Path, count: &mut usize, size: &mut u64) -> std::io::Result<()> {
+        if dir.is_dir() {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dirs(&path, count, size)?;
+                } else {
+                    *count += 1;
+                    *size += entry.metadata()?.len();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    if vfx_dir.exists() {
+        let _ = visit_dirs(&vfx_dir, &mut file_count, &mut total_size);
+    }
+
+    CacheInfo {
+        file_count,
+        total_size_bytes: total_size,
+        cache_dir: vfx_dir.to_string_lossy().to_string(),
+    }
+}
+
+#[tauri::command]
+fn clear_hero_browser_cache() -> Result<(), String> {
+    let cache_dir = get_hero_cache_dir();
+    for entry_name in &["icons", "roster.json", "locres_cache.json", "hero_table_extract", "locres_extract"] {
+        let path = cache_dir.join(entry_name);
+        if path.exists() {
+            if path.is_dir() {
+                fs::remove_dir_all(path).map_err(|e| e.to_string())?;
+            } else {
+                fs::remove_file(&path).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_vfx_cache() -> Result<(), String> {
+    let vfx_dir = get_hero_cache_dir().join("vfx");
+    if vfx_dir.exists() {
+        fs::remove_dir_all(&vfx_dir).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_folder(path: String) -> Result<(), String> {
+    let folder_path = PathBuf::from(&path);
+    if !folder_path.exists() {
+        return Err(format!("Folder does not exist: {}", path));
+    }
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer")
+        .arg(&folder_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&folder_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open")
+        .arg(&folder_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_cache_folder() -> Result<(), String> {
+    let cache_dir = get_cache_dir();
+    fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    open_folder(cache_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 async fn convert_uasset_to_json(
     app: AppHandle,
     uasset_path: String,
@@ -470,13 +785,11 @@ async fn convert_uasset_to_json(
         }
     }
 
-    // Get usmap path from settings
     let usmap_path = {
         let settings = state.settings.lock().unwrap();
         settings.usmap_path.clone()
     };
 
-    // Run conversion
     let tool_path = get_uasset_tool_path(&app);
     let file_name = uasset_path_buf
         .file_stem()
@@ -484,22 +797,24 @@ async fn convert_uasset_to_json(
         .to_string_lossy();
     let json_path = cache_dir.join(format!("{}_{}.json", file_name, &file_hash[..8]));
 
-    let mut cmd = Command::new(&tool_path);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    cmd.arg("to-json").arg(&uasset_path).arg(&json_path);
+    // Send request via UAssetTool interactive mode
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
 
-    if let Some(usmap) = &usmap_path {
-        cmd.arg("--usmap").arg(usmap);
-    }
+    let request = serde_json::json!({
+        "action": "to_json",
+        "file_path": uasset_path,
+        "output_path": json_path.to_string_lossy(),
+        "usmap_path": usmap_path,
+    });
 
-    let output = cmd.output().await.map_err(|e| e.to_string())?;
+    let response = send_tool_request(proc, &request).await?;
+    let success = response
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
-    if output.status.success() {
-        // Update cache
+    if success {
         let mut cache_index = state.cache_index.lock().unwrap();
         cache_index.entries.insert(
             uasset_path.clone(),
@@ -519,13 +834,15 @@ async fn convert_uasset_to_json(
             error: None,
         })
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let message = response
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
         Ok(ConversionResult {
             success: false,
             json_path: None,
             cached: false,
-            error: Some(format!("{}\n{}", stdout, stderr)),
+            error: Some(message.to_string()),
         })
     }
 }
@@ -544,28 +861,33 @@ async fn convert_json_to_uasset(
         settings.usmap_path.clone()
     };
 
-    let mut cmd = Command::new(&tool_path);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    cmd.arg("from-json").arg(&json_path).arg(&output_path);
-
-    if let Some(usmap) = &usmap_path {
-        cmd.arg("--usmap").arg(usmap);
+    // Ensure output directory exists
+    if let Some(parent) = Path::new(&output_path).parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    eprintln!("[DEBUG] Running from-json command: {:?}", tool_path);
-    eprintln!(
-        "[DEBUG] Args: from-json {} {} {:?}",
-        json_path, output_path, usmap_path
-    );
+    // Send request via UAssetTool interactive mode
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+
+    let request = serde_json::json!({
+        "action": "from_json",
+        "file_path": json_path,
+        "output_path": output_path,
+        "usmap_path": usmap_path,
+    });
+
+    eprintln!("[DEBUG] Sending from_json request for: {}", json_path);
     let start = std::time::Instant::now();
-    let output = cmd.output().await.map_err(|e| e.to_string())?;
-    eprintln!("[DEBUG] Command completed in {:?}", start.elapsed());
+    let response = send_tool_request(proc, &request).await?;
+    eprintln!("[DEBUG] Response received in {:?}", start.elapsed());
 
-    if output.status.success() {
+    let success = response
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if success {
         Ok(ConversionResult {
             success: true,
             json_path: Some(output_path),
@@ -573,13 +895,15 @@ async fn convert_json_to_uasset(
             error: None,
         })
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let message = response
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
         Ok(ConversionResult {
             success: false,
             json_path: None,
             cached: false,
-            error: Some(format!("{}\n{}", stdout, stderr)),
+            error: Some(message.to_string()),
         })
     }
 }
@@ -606,14 +930,11 @@ async fn batch_convert_uassets_to_json(
     let mut failed = 0;
     let mut cached_count = 0;
 
-    // Create temp file with list of paths
-    // Format per line: inputPath,outputRelPath
-    let list_file = cache_dir.join("batch_input.txt");
-    let paths_to_convert: Vec<String>;
+    // Pending conversions: (uasset_path, output_relative_sub_path)
+    let mut pending: Vec<(String, String)> = Vec::new();
 
     {
         let cache_index = state.cache_index.lock().unwrap();
-        let mut non_cached_paths = Vec::new();
 
         for uasset_path in &uasset_paths {
             let path_buf = PathBuf::from(uasset_path);
@@ -637,10 +958,6 @@ async fn batch_convert_uassets_to_json(
             }
 
             // Determine relative path for structure preservation
-            // Priority 1: Extract from Character ID (10xx)
-            // Priority 2: Relative to root_path
-            // Priority 3: Flat filename (fallback)
-
             let path_components: Vec<_> = path_buf
                 .components()
                 .map(|c| c.as_os_str().to_string_lossy().to_string())
@@ -648,7 +965,6 @@ async fn batch_convert_uassets_to_json(
 
             let mut char_id_relative_path = None;
             for (i, part) in path_components.iter().enumerate() {
-                // Check for 10xx pattern (4 digits, starts with 10)
                 if part.len() == 4 && part.starts_with("10") && part.chars().all(char::is_numeric) {
                     let mut rel_path = PathBuf::new();
                     for p in &path_components[i..] {
@@ -669,7 +985,6 @@ async fn batch_convert_uassets_to_json(
                     .to_string_lossy()
                     .to_string()
             } else {
-                // Fallback to flat structure if outside root
                 let root_name = Path::new(&root_path).file_name().unwrap_or_default();
                 Path::new(root_name)
                     .join(&file_name)
@@ -678,11 +993,29 @@ async fn batch_convert_uassets_to_json(
                     .to_string()
             };
 
-            // Expected JSON path in cache
-            let expected_json_path = cache_dir.join(&relative_sub_path);
+            let file_hash = compute_file_hash(&path_buf).ok();
+            let output_relative_sub_path = if let Some(hash) = &file_hash {
+                let rel_path = PathBuf::from(&relative_sub_path);
+                let parent = rel_path.parent().map(Path::to_path_buf).unwrap_or_default();
+                let stem = rel_path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                let ext = rel_path
+                    .extension()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+
+                parent
+                    .join(format!("{}_{}.{}", stem, &hash[..8], ext))
+                    .to_string_lossy()
+                    .to_string()
+            } else {
+                relative_sub_path.clone()
+            };
 
             // Check cache
-            if let Ok(hash) = compute_file_hash(&path_buf) {
+            if let Some(hash) = file_hash.clone() {
                 if let Some(entry) = cache_index.entries.get(uasset_path) {
                     if entry.hash == hash && Path::new(&entry.json_path).exists() {
                         results.push(SingleConversionResult {
@@ -696,7 +1029,6 @@ async fn batch_convert_uassets_to_json(
                         succeeded += 1;
                         cached_count += 1;
 
-                        // Emit progress
                         let _ = app.emit(
                             "conversion-progress",
                             ConversionProgress {
@@ -713,15 +1045,17 @@ async fn batch_convert_uassets_to_json(
                 }
             }
 
-            // Add to list: inputPath,outputRelPath
-            non_cached_paths.push(format!("{},{}", uasset_path, relative_sub_path));
-        }
+            eprintln!(
+                "[DEBUG] Queue batch conversion: input={} -> output={}",
+                uasset_path, output_relative_sub_path
+            );
 
-        paths_to_convert = non_cached_paths;
+            pending.push((uasset_path.clone(), output_relative_sub_path));
+        }
     }
 
     // If all cached, return early
-    if paths_to_convert.is_empty() {
+    if pending.is_empty() {
         return Ok(BatchConversionResult {
             total,
             succeeded,
@@ -731,118 +1065,166 @@ async fn batch_convert_uassets_to_json(
         });
     }
 
-    // Write paths to temp file
-    fs::write(&list_file, paths_to_convert.join("\n")).map_err(|e| e.to_string())?;
+    // Process uncached files in parallel via worker pool
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(pending.len())
+        .min(8);
 
-    // Run batch conversion
-    let mut cmd = Command::new(&tool_path);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    cmd.arg("batch-to-json")
-        .arg(&list_file)
-        .arg(&cache_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    eprintln!(
+        "[DEBUG] Spawning {} UAssetTool workers for {} files",
+        worker_count,
+        pending.len()
+    );
 
-    if let Some(usmap) = &usmap_path {
-        cmd.arg("--usmap").arg(usmap);
-    }
-
-    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-
-    // Take stderr for progress reading
-    let stderr = child.stderr.take();
-    let app_clone = app.clone();
-
-    // Spawn a task to read progress from stderr (non-blocking)
-    let stderr_handle = tokio::spawn(async move {
-        if let Some(stderr) = stderr {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Ok(progress) = serde_json::from_str::<ConversionProgress>(&line) {
-                    let _ = app_clone.emit("conversion-progress", &progress);
-                }
-            }
+    // Pre-create output directories (cheap, avoids races between workers)
+    for (_, relative_sub_path) in &pending {
+        let json_path = cache_dir.join(relative_sub_path);
+        if let Some(parent) = json_path.parent() {
+            let _ = fs::create_dir_all(parent);
         }
-    });
+    }
 
-    // Wait for process to complete
-    let output = child.wait_with_output().await.map_err(|e| e.to_string())?;
+    // Split work into chunks and spawn workers
+    let chunk_size = (pending.len() + worker_count - 1) / worker_count;
+    let progress_counter = Arc::new(AtomicUsize::new(results.len()));
+    let mut handles = Vec::new();
 
-    // Wait for stderr reading to finish
-    let _ = stderr_handle.await;
+    for chunk in pending.chunks(chunk_size) {
+        let chunk = chunk.to_vec();
+        let tool = tool_path.clone();
+        let usmap = usmap_path.clone();
+        let cache = cache_dir.clone();
+        let app_clone = app.clone();
+        let counter = progress_counter.clone();
+        let total_for_progress = total;
 
-    // Parse batch results from stdout
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if let Ok(batch_result) = serde_json::from_str::<serde_json::Value>(&stdout) {
-        if let Some(batch_results) = batch_result.get("results").and_then(|r| r.as_array()) {
-            let mut cache_index = state.cache_index.lock().unwrap();
+        handles.push(tokio::spawn(async move {
+            let mut proc = spawn_tool_process(&tool).await?;
+            let mut chunk_results: Vec<SingleConversionResult> = Vec::new();
+            let mut chunk_cache_updates: Vec<(String, CacheEntry)> = Vec::new();
+            let mut chunk_succeeded = 0usize;
+            let mut chunk_failed = 0usize;
 
-            for result in batch_results {
-                let success = result
-                    .get("success")
-                    .and_then(|s| s.as_bool())
-                    .unwrap_or(false);
-                let file_name = result
-                    .get("fileName")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("")
+            for (uasset_path, relative_sub_path) in &chunk {
+                let path_buf = PathBuf::from(uasset_path);
+                let file_name = path_buf
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
                     .to_string();
-                let uasset_path = result
-                    .get("uassetPath")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let json_path = result
-                    .get("jsonPath")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s.to_string());
-                let error = result
-                    .get("error")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s.to_string());
 
-                if success {
-                    succeeded += 1;
+                let json_path = cache.join(relative_sub_path);
 
-                    // Update cache
-                    if let (Some(jp), Ok(hash)) =
-                        (&json_path, compute_file_hash(Path::new(&uasset_path)))
-                    {
-                        cache_index.entries.insert(
-                            uasset_path.clone(),
-                            CacheEntry {
-                                hash,
-                                json_path: jp.clone(),
-                                uasset_path: uasset_path.clone(),
-                                timestamp: chrono::Utc::now().to_rfc3339(),
-                            },
-                        );
-                    }
-                } else {
-                    failed += 1;
-                }
-
-                results.push(SingleConversionResult {
-                    success,
-                    file_name,
-                    uasset_path,
-                    json_path,
-                    cached: false,
-                    error,
+                let request = serde_json::json!({
+                    "action": "to_json",
+                    "file_path": uasset_path,
+                    "output_path": json_path.to_string_lossy(),
+                    "usmap_path": usmap,
                 });
+
+                let response = send_tool_request(&mut proc, &request).await;
+                let mut error_msg = None;
+
+                match response {
+                    Ok(resp) => {
+                        let success = resp
+                            .get("success")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+
+                        if success {
+                            chunk_succeeded += 1;
+                            let json_path_str = json_path.to_string_lossy().to_string();
+
+                            if let Ok(hash) = compute_file_hash(&path_buf) {
+                                chunk_cache_updates.push((
+                                    uasset_path.clone(),
+                                    CacheEntry {
+                                        hash,
+                                        json_path: json_path_str.clone(),
+                                        uasset_path: uasset_path.clone(),
+                                        timestamp: chrono::Utc::now().to_rfc3339(),
+                                    },
+                                ));
+                            }
+
+                            chunk_results.push(SingleConversionResult {
+                                success: true,
+                                file_name: file_name.clone(),
+                                uasset_path: uasset_path.clone(),
+                                json_path: Some(json_path_str),
+                                cached: false,
+                                error: None,
+                            });
+                        } else {
+                            chunk_failed += 1;
+                            let err = resp
+                                .get("message")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Unknown error")
+                                .to_string();
+                            error_msg = Some(err.clone());
+
+                            chunk_results.push(SingleConversionResult {
+                                success: false,
+                                file_name: file_name.clone(),
+                                uasset_path: uasset_path.clone(),
+                                json_path: None,
+                                cached: false,
+                                error: Some(err),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        chunk_failed += 1;
+                        error_msg = Some(e.clone());
+                        chunk_results.push(SingleConversionResult {
+                            success: false,
+                            file_name: file_name.clone(),
+                            uasset_path: uasset_path.clone(),
+                            json_path: None,
+                            cached: false,
+                            error: Some(e),
+                        });
+                    }
+                }
+
+                let current = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                let _ = app_clone.emit(
+                    "conversion-progress",
+                    ConversionProgress {
+                        progress_type: Some("progress".to_string()),
+                        current,
+                        total: total_for_progress,
+                        file_name,
+                        cached: false,
+                        error: error_msg,
+                    },
+                );
             }
 
-            let _ = save_cache_index(&cache_index);
-        }
+            let _ = proc.child.kill().await;
+            Ok::<_, String>((chunk_results, chunk_cache_updates, chunk_succeeded, chunk_failed))
+        }));
     }
 
-    // Cleanup temp file
-    let _ = fs::remove_file(&list_file);
+    // Collect results from all workers
+    for handle in handles {
+        let (chunk_results, chunk_cache_updates, s, f) =
+            handle.await.map_err(|e| e.to_string())??;
+        results.extend(chunk_results);
+        succeeded += s;
+        failed += f;
+
+        // Apply cache updates
+        let mut cache_index = state.cache_index.lock().unwrap();
+        for (key, entry) in chunk_cache_updates {
+            cache_index.entries.insert(key, entry);
+        }
+        let _ = save_cache_index(&cache_index);
+    }
 
     Ok(BatchConversionResult {
         total,
@@ -861,105 +1243,252 @@ async fn batch_convert_jsons_to_uassets(
     output_dir: String,
 ) -> Result<BatchConversionResult, String> {
     let tool_path = get_uasset_tool_path(&app);
-    let cache_dir = get_cache_dir();
 
     let usmap_path = {
         let settings = state.settings.lock().unwrap();
         settings.usmap_path.clone()
     };
 
-    // Create temp file with list of paths (format: jsonPath,outputName per line)
-    let list_file = cache_dir.join("batch_output_list.txt");
-    fs::write(&list_file, json_paths.join("\n")).map_err(|e| e.to_string())?;
-
-    // Ensure output directory exists
     fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
 
     let total = json_paths.len();
+    let mut succeeded = 0;
+    let mut failed = 0;
+    let mut results = Vec::new();
+
+    if total == 0 {
+        eprintln!("[DEBUG] batch_convert_jsons_to_uassets: no input files");
+        return Ok(BatchConversionResult {
+            total,
+            succeeded,
+            failed,
+            cached_count: 0,
+            results,
+        });
+    }
 
     eprintln!(
         "[DEBUG] batch_convert_jsons_to_uassets: total={} files, output_dir={}",
         total, output_dir
     );
-    eprintln!("[DEBUG] Tool path: {:?}", tool_path);
-    eprintln!("[DEBUG] Usmap path: {:?}", usmap_path);
 
-    // Run batch conversion
-    let mut cmd = Command::new(&tool_path);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    // Parse entries into (json_path, output_name) pairs
+    let parsed: Vec<(String, String)> = json_paths
+        .iter()
+        .map(|entry| {
+            if let Some(comma_idx) = entry.find(',') {
+                (
+                    entry[..comma_idx].trim().to_string(),
+                    entry[comma_idx + 1..].trim().to_string(),
+                )
+            } else {
+                let p = Path::new(entry.trim());
+                let name = p
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                (entry.trim().to_string(), format!("{}.uasset", name))
+            }
+        })
+        .collect();
+
+    struct EntryState {
+        json_path: String,
+        file_name: String,
+        output_name: String,
+        staged_json_path: Option<String>,
+        pre_error: Option<String>,
     }
-    cmd.arg("batch-from-json")
-        .arg(&list_file)
-        .arg(&output_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
 
-    if let Some(usmap) = &usmap_path {
-        cmd.arg("--usmap").arg(usmap);
-    }
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let stage_root = get_cache_dir()
+        .join("batch_from_json_stage")
+        .join(format!("{}_{}_{}", std::process::id(), now_ms, total));
+    fs::create_dir_all(&stage_root).map_err(|e| e.to_string())?;
 
-    eprintln!("[DEBUG] Spawning batch command...");
-    let spawn_start = std::time::Instant::now();
-    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-    eprintln!("[DEBUG] Spawn took {:?}", spawn_start.elapsed());
+    eprintln!(
+        "[DEBUG] batch_convert_jsons_to_uassets: staging jsons with base_path={} ",
+        stage_root.to_string_lossy()
+    );
 
-    // Take stderr for progress reading
-    let stderr = child.stderr.take();
-    let app_clone = app.clone();
+    let mut entries: Vec<EntryState> = Vec::with_capacity(parsed.len());
+    let mut staged_file_paths: Vec<String> = Vec::new();
 
-    // Spawn a task to read progress from stderr (non-blocking)
-    let stderr_handle = tokio::spawn(async move {
-        if let Some(stderr) = stderr {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Ok(progress) = serde_json::from_str::<ConversionProgress>(&line) {
-                    let _ = app_clone.emit("conversion-progress", &progress);
-                }
+    for (json_path, output_name) in &parsed {
+        let file_name = Path::new(json_path)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        let staged_rel_json = Path::new(output_name).with_extension("json");
+        let staged_json_path = stage_root.join(&staged_rel_json);
+
+        if let Some(parent) = staged_json_path.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                let err = format!(
+                    "Failed to create staging directory {}: {}",
+                    parent.to_string_lossy(),
+                    e
+                );
+                eprintln!("[DEBUG] batch_convert_jsons_to_uassets: {}", err);
+                entries.push(EntryState {
+                    json_path: json_path.clone(),
+                    file_name,
+                    output_name: output_name.clone(),
+                    staged_json_path: None,
+                    pre_error: Some(err),
+                });
+                continue;
             }
         }
-    });
 
-    // Wait for process to complete
-    let output = child.wait_with_output().await.map_err(|e| e.to_string())?;
-
-    // Wait for stderr reading to finish
-    let _ = stderr_handle.await;
-
-    // Parse batch results from stdout
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr_output = String::from_utf8_lossy(&output.stderr);
-
-    // Log for debugging
-    eprintln!("[DEBUG] batch-from-json stdout length: {}", stdout.len());
-    eprintln!(
-        "[DEBUG] batch-from-json stderr length: {}",
-        stderr_output.len()
-    );
-    let stdout_preview: String = stdout.chars().take(500).collect();
-    eprintln!("[DEBUG] stdout preview: {}", stdout_preview);
-    if !output.status.success() {
-        eprintln!("[DEBUG] Exit code: {:?}", output.status.code());
+        match fs::copy(json_path, &staged_json_path) {
+            Ok(_) => {
+                let staged = staged_json_path.to_string_lossy().to_string();
+                staged_file_paths.push(staged.clone());
+                entries.push(EntryState {
+                    json_path: json_path.clone(),
+                    file_name,
+                    output_name: output_name.clone(),
+                    staged_json_path: Some(staged),
+                    pre_error: None,
+                });
+            }
+            Err(e) => {
+                let err = format!("Failed to stage JSON {}: {}", json_path, e);
+                eprintln!("[DEBUG] batch_convert_jsons_to_uassets: {}", err);
+                entries.push(EntryState {
+                    json_path: json_path.clone(),
+                    file_name,
+                    output_name: output_name.clone(),
+                    staged_json_path: None,
+                    pre_error: Some(err),
+                });
+            }
+        }
     }
 
-    let mut succeeded = 0;
-    let mut failed = total; // Default to all failed
-    let results = Vec::new();
+    eprintln!(
+        "[DEBUG] batch_convert_jsons_to_uassets: staged {} / {} files for single batch_from_json",
+        staged_file_paths.len(),
+        total
+    );
 
-    if let Ok(batch_result) = serde_json::from_str::<serde_json::Value>(&stdout) {
-        succeeded = batch_result
-            .get("succeeded")
-            .and_then(|s| s.as_u64())
-            .unwrap_or(0) as usize;
-        failed = batch_result
-            .get("failed")
-            .and_then(|s| s.as_u64())
-            .unwrap_or(total as u64) as usize;
+    let mut batch_error: Option<String> = None;
+    if staged_file_paths.is_empty() {
+        batch_error = Some("No JSON files could be staged for batch conversion".to_string());
     } else {
-        eprintln!("[DEBUG] Failed to parse stdout as JSON");
+        let mut process_guard = state.tool_process.lock().await;
+        let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+
+        let request = serde_json::json!({
+            "action": "batch_from_json",
+            "file_paths": staged_file_paths,
+            "output_path": output_dir.clone(),
+            "usmap_path": usmap_path.clone(),
+            "base_path": stage_root.to_string_lossy().to_string(),
+        });
+
+        eprintln!(
+            "[DEBUG] batch_convert_jsons_to_uassets: sending single batch_from_json request with base_path"
+        );
+
+        match send_tool_request(proc, &request).await {
+            Ok(resp) => {
+                let success = resp
+                    .get("success")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let message = resp
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Batch from_json completed");
+                if !success {
+                    batch_error = Some(message.to_string());
+                }
+                eprintln!(
+                    "[DEBUG] batch_convert_jsons_to_uassets: batch_from_json success={} message={}",
+                    success,
+                    message
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "[DEBUG] batch_convert_jsons_to_uassets: batch_from_json request failed: {}",
+                    e
+                );
+                batch_error = Some(e);
+            }
+        }
+
+        drop(process_guard);
+    }
+
+    for (idx, entry) in entries.iter().enumerate() {
+        let final_output_path = Path::new(&output_dir).join(&entry.output_name);
+        let output_exists = final_output_path.exists();
+
+        let error_msg = if let Some(pre) = &entry.pre_error {
+            Some(pre.clone())
+        } else if entry.staged_json_path.is_some() && output_exists {
+            None
+        } else {
+            Some(
+                batch_error
+                    .clone()
+                    .unwrap_or_else(|| "UAsset not produced by batch_from_json".to_string()),
+            )
+        };
+
+        match error_msg.clone() {
+            Some(err) => {
+                failed += 1;
+                results.push(SingleConversionResult {
+                    success: false,
+                    file_name: entry.file_name.clone(),
+                    uasset_path: final_output_path.to_string_lossy().to_string(),
+                    json_path: Some(entry.json_path.clone()),
+                    cached: false,
+                    error: Some(err),
+                });
+            }
+            None => {
+                succeeded += 1;
+                results.push(SingleConversionResult {
+                    success: true,
+                    file_name: entry.file_name.clone(),
+                    uasset_path: final_output_path.to_string_lossy().to_string(),
+                    json_path: Some(entry.json_path.clone()),
+                    cached: false,
+                    error: None,
+                });
+            }
+        }
+
+        let _ = app.emit(
+            "conversion-progress",
+            ConversionProgress {
+                progress_type: Some("progress".to_string()),
+                current: idx + 1,
+                total,
+                file_name: entry.file_name.clone(),
+                cached: false,
+                error: error_msg,
+            },
+        );
+    }
+
+    if let Err(e) = fs::remove_dir_all(&stage_root) {
+        eprintln!(
+            "[DEBUG] batch_convert_jsons_to_uassets: failed to clean staging dir {}: {}",
+            stage_root.to_string_lossy(),
+            e
+        );
     }
 
     Ok(BatchConversionResult {
@@ -968,6 +1497,1401 @@ async fn batch_convert_jsons_to_uassets(
         failed,
         cached_count: 0,
         results,
+    })
+}
+
+// ============================================================================
+// HERO VFX BROWSER - TYPES
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HeroEntry {
+    pub hero_id: String,
+    pub display_name: String,
+    pub icon_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HeroRosterResult {
+    pub heroes: Vec<HeroEntry>,
+    pub cached: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HeroVfxResult {
+    pub hero_id: String,
+    pub uasset_paths: Vec<String>,
+    pub json_paths: Vec<String>,
+    pub cached: bool,
+    pub error: Option<String>,
+}
+
+// ============================================================================
+// HERO VFX BROWSER - HELPERS
+// ============================================================================
+
+fn get_hero_cache_dir() -> PathBuf {
+    get_cache_dir().join("hero-browser")
+}
+
+fn get_hero_icons_dir() -> PathBuf {
+    get_hero_cache_dir().join("icons")
+}
+
+fn get_hero_roster_cache_path() -> PathBuf {
+    get_hero_cache_dir().join("roster.json")
+}
+
+fn get_locres_cache_path() -> PathBuf {
+    get_hero_cache_dir().join("locres_cache.json")
+}
+
+/// Intermediate struct for hero data parsed from compact JSON before locres resolution.
+#[derive(Debug)]
+struct HeroRowData {
+    hero_id: String,
+    tname_key: Option<String>,
+    tname_table_id: Option<String>,
+    en_name: Option<String>,
+}
+
+/// Find Game.locres, preferring English localizations when present.
+fn find_locres_recursive(dir: &Path) -> Option<PathBuf> {
+    if !dir.exists() {
+        return None;
+    }
+    let mut english_match: Option<PathBuf> = None;
+    let mut fallback_match: Option<PathBuf> = None;
+    for entry in fs::read_dir(dir).ok()?.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            let dir_name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+            let candidate = path.join("Game.locres");
+            if candidate.exists() {
+                if dir_name == "en" || dir_name.starts_with("en-") || dir_name.starts_with("en_") {
+                    eprintln!("[DEBUG] Preferred English Game.locres found at: {:?}", candidate);
+                    return Some(candidate);
+                }
+                if fallback_match.is_none() {
+                    eprintln!("[DEBUG] Non-English Game.locres candidate found at: {:?}", candidate);
+                    fallback_match = Some(candidate);
+                }
+            }
+            if let Some(found) = find_locres_recursive(&path) {
+                let parent_name = found
+                    .parent()
+                    .and_then(|parent| parent.file_name())
+                    .map(|name| name.to_string_lossy().to_ascii_lowercase());
+                if matches!(parent_name.as_deref(), Some(name) if name == "en" || name.starts_with("en-") || name.starts_with("en_")) {
+                    return Some(found);
+                }
+                if english_match.is_none() {
+                    english_match = Some(found);
+                }
+            }
+        } else if path.file_name()?.to_string_lossy().eq_ignore_ascii_case("Game.locres") && fallback_match.is_none() {
+            eprintln!("[DEBUG] Direct Game.locres candidate found at: {:?}", path);
+            fallback_match = Some(path);
+        }
+    }
+    english_match.or(fallback_match)
+}
+
+/// Spawn UAssetTool as a CLI process (not interactive mode) for extract_iostore_legacy.
+/// Returns (stdout, stderr) output.
+async fn run_uasset_tool_cli(
+    tool_path: &Path,
+    args: &[&str],
+) -> Result<(String, String), String> {
+    eprintln!("[DEBUG] Running UAssetTool CLI: {:?} {:?}", tool_path, args);
+
+    let mut cmd = tokio::process::Command::new(tool_path);
+    cmd.args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run UAssetTool CLI: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    eprintln!(
+        "[DEBUG] UAssetTool CLI exit={}, stdout_len={}, stderr_len={}",
+        output.status,
+        stdout.len(),
+        stderr.len()
+    );
+    if !stderr.is_empty() {
+        eprintln!("[DEBUG] UAssetTool CLI stderr: {}", &stderr[..stderr.len().min(500)]);
+    }
+
+    Ok((stdout, stderr))
+}
+
+/// Load locres data for hero display name resolution.
+/// 1. Checks JSON cache
+/// 2. Extracts Game.locres from pakchunkLocres-Windows.pak via CLI extract_pak
+/// 3. Parses the extracted .locres via UAT's parse_locres JSON API
+/// 4. Caches the result as JSON
+async fn load_locres_data(
+    _app: &AppHandle,
+    state: &State<'_, AppState>,
+    paks_path: &str,
+    tool_path: &Path,
+    _usmap_path: &Option<String>,
+) -> Result<serde_json::Value, String> {
+    let locres_cache_path = get_locres_cache_path();
+
+    // Check cache
+    if locres_cache_path.exists() {
+        eprintln!("[DEBUG] Loading locres data from cache: {:?}", locres_cache_path);
+        if let Ok(cached) = fs::read_to_string(&locres_cache_path) {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&cached) {
+                let namespace_count = data.as_object().map(|o| o.len()).unwrap_or(0);
+                eprintln!("[DEBUG] Loaded locres cache with {} namespaces", namespace_count);
+                if namespace_count > 0 {
+                    return Ok(data);
+                }
+                eprintln!("[DEBUG] Ignoring empty locres cache and rebuilding it");
+            }
+        }
+    }
+
+    // Find pakchunkLocres-Windows.pak in the paks directory
+    let paks_dir = Path::new(paks_path);
+    if !paks_dir.exists() {
+        return Err(format!("Paks directory not found: {:?}", paks_dir));
+    }
+
+    let locres_pak = find_file_recursive(paks_dir, "pakchunkLocres-Windows.pak")
+        .ok_or_else(|| format!("pakchunkLocres-Windows.pak not found in {:?}", paks_dir))?;
+
+    eprintln!("[DEBUG] Found locres pak at: {:?}", locres_pak);
+
+    // Extract Game.locres from the pak via CLI extract_pak
+    let locres_extract_dir = get_hero_cache_dir().join("locres_extract");
+    if locres_extract_dir.exists() {
+        eprintln!("[DEBUG] Clearing stale locres extract dir: {:?}", locres_extract_dir);
+        fs::remove_dir_all(&locres_extract_dir).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir_all(&locres_extract_dir).map_err(|e| e.to_string())?;
+
+    // Extract all files from the locres pak (it only contains localization files, so no filter needed)
+    let (stdout, stderr) = run_uasset_tool_cli(
+        &tool_path,
+        &[
+            "extract_pak",
+            &locres_pak.to_string_lossy(),
+            &locres_extract_dir.to_string_lossy(),
+        ],
+    ).await?;
+
+    eprintln!("[DEBUG] extract_pak stdout: {}", &stdout[..stdout.len().min(500)]);
+    if !stderr.is_empty() {
+        eprintln!("[DEBUG] extract_pak stderr: {}", &stderr[..stderr.len().min(500)]);
+    }
+
+    // Find the preferred Game.locres file, favoring English localizations.
+    let locres_file = find_locres_recursive(&locres_extract_dir)
+        .ok_or_else(|| "Game.locres not found after extraction from pakchunkLocres-Windows.pak".to_string())?;
+
+    eprintln!("[DEBUG] Found extracted Game.locres at: {:?}", locres_file);
+
+    // Parse locres via UAT interactive mode
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, tool_path).await?;
+
+    let request = serde_json::json!({
+        "action": "parse_locres",
+        "file_path": locres_file.to_string_lossy(),
+    });
+
+    let response = send_tool_request(proc, &request).await?;
+    drop(process_guard);
+
+    let success = response.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+    if !success {
+        let msg = response.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+        return Err(format!("Failed to parse Game.locres: {}", msg));
+    }
+
+    let data = response.get("data").cloned().unwrap_or(serde_json::Value::Null);
+    let namespace_count = data.as_object().map(|o| o.len()).unwrap_or(0);
+
+    eprintln!("[DEBUG] Parsed locres: {} namespaces", namespace_count);
+    if namespace_count == 0 {
+        return Err("Parsed Game.locres successfully but it contained no namespaces".to_string());
+    }
+
+    // Cache the locres data
+    let cache_dir = get_hero_cache_dir();
+    fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    let cache_json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+    fs::write(&locres_cache_path, &cache_json).map_err(|e| e.to_string())?;
+    eprintln!("[DEBUG] Cached locres data to {:?}", locres_cache_path);
+
+    Ok(data)
+}
+
+/// Parse hero roster from UIHeroTable compact JSON.
+/// Compact JSON format (from CompactJsonSerializer) is an array of exports:
+/// [{ "Type": "DataTable", "Rows": { rowName: { props } } }]
+/// Extracts HeroID, TName.Key/TableId (for locres lookup), and EnName (fallback).
+fn parse_hero_roster_from_json(json_str: &str) -> Result<Vec<HeroRowData>, String> {
+    eprintln!("[DEBUG] Parsing hero roster from compact JSON ({} bytes)", json_str.len());
+    let json: serde_json::Value =
+        serde_json::from_str(json_str).map_err(|e| format!("Failed to parse UIHeroTable JSON: {}", e))?;
+
+    let mut heroes: Vec<HeroRowData> = Vec::new();
+
+    // Compact JSON: top-level is an array of exports
+    let exports = json.as_array();
+
+    if let Some(exports) = exports {
+        for export in exports {
+            if let Some(rows) = export.get("Rows").and_then(|v| v.as_object()) {
+                eprintln!("[DEBUG] Found Rows map with {} entries", rows.len());
+                for (row_name, row_data) in rows {
+                    if row_name.len() < 4 { continue; }
+                    let hero_id_4 = &row_name[..4];
+                    if !hero_id_4.chars().all(|c| c.is_ascii_digit()) { continue; }
+
+                    let row_obj = match row_data.as_object() {
+                        Some(obj) => obj,
+                        None => continue,
+                    };
+
+                    // Extract HeroID from "HeroID_72_..." field
+                    let hero_id = find_field_by_prefix(row_obj, "HeroID_")
+                        .and_then(|v| v.as_i64())
+                        .map(|id| id.to_string())
+                        .unwrap_or_else(|| hero_id_4.to_string());
+
+                    // Find HeroBasic_84_... struct
+                    let hero_basic = find_field_by_prefix(row_obj, "HeroBasic_")
+                        .and_then(|v| v.as_object());
+
+                    // Extract TName from HeroBasic -> "TName_10_..." -> { TableId, Key }
+                    let (tname_key, tname_table_id) = hero_basic.and_then(|hb| {
+                        let tname_obj = find_field_by_prefix(hb, "TName_")?;
+                        let key = tname_obj.get("Key")?.as_str()?.to_string();
+                        let table_id = tname_obj.get("TableId")?.as_str()?.to_string();
+                        Some((key, table_id))
+                    }).unzip();
+
+                    // Extract EnName from HeroBasic -> "EnName_45_..."
+                    let en_name = hero_basic.and_then(|hb| {
+                        find_field_by_prefix(hb, "EnName_").and_then(|v| v.as_str()).map(|s| s.to_string())
+                    });
+
+                    if !heroes.iter().any(|h| h.hero_id == hero_id) {
+                        eprintln!("[DEBUG] Found hero: id={}, tname_key={:?}, en_name={:?}", hero_id, tname_key, en_name);
+                        heroes.push(HeroRowData { hero_id, tname_key, tname_table_id, en_name });
+                    }
+                }
+            }
+        }
+    }
+
+    eprintln!("[DEBUG] Total heroes parsed: {}", heroes.len());
+    Ok(heroes)
+}
+
+/// Find a field value in a JSON object by key prefix (e.g. "HeroID_" matches "HeroID_72_5B344F95...")
+fn find_field_by_prefix<'a>(obj: &'a serde_json::Map<String, serde_json::Value>, prefix: &str) -> Option<&'a serde_json::Value> {
+    for (key, value) in obj {
+        if key.starts_with(prefix) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// Resolve display names for heroes using locres data.
+/// Locres data is { namespace: { key: localized_string } } from UAT's parse_locres.
+/// The TableId maps to a namespace in the locres (asset name portion).
+fn resolve_hero_display_names(rows: &[HeroRowData], locres_data: &serde_json::Value) -> Vec<HeroEntry> {
+    rows.iter().map(|row| {
+        let display_name = if let (Some(key), Some(table_id)) = (&row.tname_key, &row.tname_table_id) {
+            // TableId is like "/Game/Marvel/Data/StringTable/Hero_ST/1011/601_HeroUIAsset_1011_ST.601_HeroUIAsset_1011_ST"
+            // The namespace in locres is the asset name: "601_HeroUIAsset_1011_ST"
+            let namespace = extract_namespace_from_table_id(table_id);
+            eprintln!("[DEBUG] Looking up hero_id={} namespace={:?} key={:?}", row.hero_id, namespace, key);
+
+            if let Some(name) = lookup_locres(locres_data, namespace.as_deref(), key) {
+                eprintln!("[DEBUG] Resolved hero {} display name from locres: {}", row.hero_id, name);
+                name
+            } else {
+                // Fallback: try searching all namespaces for the key
+                if let Some(name) = lookup_locres_any_namespace(locres_data, key) {
+                    eprintln!("[DEBUG] Resolved hero {} display name from locres (any namespace): {}", row.hero_id, name);
+                    name
+                } else if let Some(en) = &row.en_name {
+                    eprintln!("[DEBUG] Hero {} locres lookup failed, using EnName: {}", row.hero_id, en);
+                    en.clone()
+                } else {
+                    eprintln!("[DEBUG] Hero {} no locres match or EnName, using ID fallback", row.hero_id);
+                    format!("Hero {}", row.hero_id)
+                }
+            }
+        } else if let Some(en) = &row.en_name {
+            eprintln!("[DEBUG] Hero {} no TName, using EnName: {}", row.hero_id, en);
+            en.clone()
+        } else {
+            format!("Hero {}", row.hero_id)
+        };
+
+        HeroEntry {
+            hero_id: row.hero_id.clone(),
+            display_name,
+            icon_path: None,
+        }
+    }).collect()
+}
+
+/// Extract the namespace (asset name) from a TableId path.
+/// "/Game/Marvel/Data/StringTable/Hero_ST/1011/601_HeroUIAsset_1011_ST.601_HeroUIAsset_1011_ST"
+/// -> "601_HeroUIAsset_1011_ST"
+fn extract_namespace_from_table_id(table_id: &str) -> Option<String> {
+    // TableId format: /Path/To/Asset.AssetName
+    // The part after the last dot is the asset name, which is the locres namespace
+    let after_dot = table_id.rsplit('.').next()?;
+    // Also try the part after the last slash (before the dot)
+    let after_slash = table_id.rsplit('/').next()?;
+    let asset_name = after_slash.rsplit('.').next()?;
+    // Return the more specific one (after dot, which is the object name)
+    let namespace = if after_dot == asset_name {
+        after_dot.to_string()
+    } else {
+        after_dot.to_string()
+    };
+    if namespace.is_empty() { None } else { Some(namespace) }
+}
+
+/// Look up a localized string in locres data by namespace and key.
+fn lookup_locres(locres_data: &serde_json::Value, namespace: Option<&str>, key: &str) -> Option<String> {
+    let ns_map = namespace.and_then(|ns| locres_data.get(ns))?;
+    let value = ns_map.get(key)?.as_str()?;
+    if value.is_empty() { return None; }
+    Some(value.to_string())
+}
+
+/// Search all namespaces in locres data for a specific key.
+fn lookup_locres_any_namespace(locres_data: &serde_json::Value, key: &str) -> Option<String> {
+    let ns_map = locres_data.as_object()?;
+    for (_ns_name, entries) in ns_map {
+        if let Some(value) = entries.get(key).and_then(|v| v.as_str()) {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+// ============================================================================
+// HERO VFX BROWSER - TAURI COMMANDS
+// ============================================================================
+
+#[tauri::command]
+async fn get_hero_roster(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    force_refresh: bool,
+) -> Result<HeroRosterResult, String> {
+    eprintln!("[DEBUG] get_hero_roster called, force_refresh={}", force_refresh);
+
+    let roster_cache_path = get_hero_roster_cache_path();
+
+    // Check cache first
+    if !force_refresh && roster_cache_path.exists() {
+        eprintln!("[DEBUG] Loading hero roster from cache: {:?}", roster_cache_path);
+        if let Ok(cached_json) = fs::read_to_string(&roster_cache_path) {
+            if let Ok(heroes) = serde_json::from_str::<Vec<HeroEntry>>(&cached_json) {
+                eprintln!("[DEBUG] Loaded {} heroes from cache", heroes.len());
+                return Ok(HeroRosterResult {
+                    heroes,
+                    cached: true,
+                    error: None,
+                });
+            }
+        }
+    }
+
+    // Get paks path from settings
+    let (paks_path, usmap_path) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.paks_path.clone(), settings.usmap_path.clone())
+    };
+
+    let paks_path = paks_path.ok_or_else(|| "Game Paks path not set. Please set it in Settings.".to_string())?;
+
+    if !Path::new(&paks_path).exists() {
+        return Err(format!("Game Paks directory not found: {}", paks_path));
+    }
+
+    let tool_path = get_uasset_tool_path(&app);
+    if !tool_path.exists() {
+        return Err(format!("UAssetTool not found at: {:?}", tool_path));
+    }
+
+    // Step 1: Extract UIHeroTable via CLI extract_iostore_legacy
+    let hero_table_dir = get_hero_cache_dir().join("hero_table_extract");
+    fs::create_dir_all(&hero_table_dir).map_err(|e| e.to_string())?;
+
+    eprintln!("[DEBUG] Extracting UIHeroTable from paks: {}", paks_path);
+    let (stdout, stderr) = run_uasset_tool_cli(
+        &tool_path,
+        &[
+            "extract_iostore_legacy",
+            &paks_path,
+            &hero_table_dir.to_string_lossy(),
+            "--filter",
+            "UIHeroTable",
+        ],
+    )
+    .await?;
+    eprintln!("[DEBUG] extract_iostore_legacy stdout: {}", &stdout[..stdout.len().min(500)]);
+
+    // Find the extracted UIHeroTable.uasset
+    let hero_table_uasset = find_file_recursive(&hero_table_dir, "UIHeroTable.uasset");
+    let hero_table_uasset = hero_table_uasset.ok_or_else(|| {
+        format!(
+            "UIHeroTable.uasset not found after extraction. stdout: {}... stderr: {}...",
+            &stdout[..stdout.len().min(200)],
+            &stderr[..stderr.len().min(200)]
+        )
+    })?;
+
+    eprintln!("[DEBUG] Found UIHeroTable at: {:?}", hero_table_uasset);
+
+    // Step 2: Convert UIHeroTable.uasset to JSON via interactive mode
+    let json_output = hero_table_dir.join("UIHeroTable.json");
+
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+
+    let request = serde_json::json!({
+        "action": "compact_json",
+        "file_path": hero_table_uasset.to_string_lossy(),
+        "output_path": json_output.to_string_lossy(),
+        "usmap_path": usmap_path,
+    });
+
+    let response = send_tool_request(proc, &request).await?;
+    let success = response.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    if !success {
+        let msg = response.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+        return Err(format!("Failed to convert UIHeroTable to JSON: {}", msg));
+    }
+
+    drop(process_guard);
+
+    // Step 3: Parse the JSON to extract hero data
+    let json_str = fs::read_to_string(&json_output)
+        .map_err(|e| format!("Failed to read UIHeroTable JSON: {}", e))?;
+
+    // Strip UTF-8 BOM if present (UAssetAPI may emit one)
+    let json_str = json_str.trim_start_matches('\u{feff}').trim();
+    eprintln!(
+        "[DEBUG] UIHeroTable JSON first 200 chars: {}",
+        &json_str[..json_str.len().min(200)]
+    );
+
+    let hero_rows = parse_hero_roster_from_json(json_str)?;
+
+    if hero_rows.is_empty() {
+        return Err("No heroes found in UIHeroTable. The table format may have changed.".to_string());
+    }
+
+    // Step 4: Load/extract Game.locres for display name resolution
+    let locres_data = load_locres_data(&app, &state, &paks_path, &tool_path, &usmap_path).await
+        .unwrap_or_else(|e| {
+            eprintln!("[DEBUG] Failed to load locres (names will use EnName fallback): {}", e);
+            serde_json::Value::Null
+        });
+
+    // Step 5: Resolve display names from locres
+    let heroes = resolve_hero_display_names(&hero_rows, &locres_data);
+
+    // Filter out non-playable entries: IDs >= 4000 or 5+ digits
+    let heroes: Vec<_> = heroes.into_iter().filter(|h| {
+        let id_num = h.hero_id.parse::<u32>().unwrap_or(u32::MAX);
+        id_num < 4000 && h.hero_id.len() < 5
+    }).collect();
+    eprintln!("[DEBUG] {} heroes remaining after filtering non-playable IDs", heroes.len());
+
+    if heroes.is_empty() {
+        return Err("No heroes resolved after locres lookup.".to_string());
+    }
+
+    // Cache the roster
+    let cache_dir = get_hero_cache_dir();
+    fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    let cache_json = serde_json::to_string_pretty(&heroes).map_err(|e| e.to_string())?;
+    fs::write(&roster_cache_path, &cache_json).map_err(|e| e.to_string())?;
+    eprintln!("[DEBUG] Cached {} heroes to {:?}", heroes.len(), roster_cache_path);
+
+    Ok(HeroRosterResult {
+        heroes,
+        cached: false,
+        error: None,
+    })
+}
+
+#[tauri::command]
+async fn batch_extract_hero_icons(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hero_ids: Vec<String>,
+) -> Result<(), String> {
+    eprintln!("[DEBUG] batch_extract_hero_icons called with {} heroes", hero_ids.len());
+    
+    let icons_dir = get_hero_icons_dir();
+    let cache_dir = get_hero_cache_dir();
+    let mut to_extract = Vec::new();
+
+    for id in &hero_ids {
+        let icon_png = icons_dir.join(format!("{}.png", id));
+        if !icon_png.exists() {
+            to_extract.push(id.clone());
+        }
+    }
+
+    if to_extract.is_empty() {
+        return Ok(());
+    }
+
+    let (paks_path, usmap_path) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.paks_path.clone(), settings.usmap_path.clone())
+    };
+    let paks_path = paks_path.ok_or("Game Paks path not set")?;
+    let tool_path = get_uasset_tool_path(&app);
+
+    let batch_extract_dir = cache_dir.join("icon_extract_batch");
+    fs::create_dir_all(&batch_extract_dir).map_err(|e| e.to_string())?;
+
+    let filters_txt = cache_dir.join("icon_filters.txt");
+    let mut f_content = String::new();
+    for id in &to_extract {
+        // user specified we only need squarehead (base, no 00 suffix)
+        f_content.push_str(&format!("img_squarehead_{}\n", id));
+    }
+    fs::write(&filters_txt, &f_content).map_err(|e| e.to_string())?;
+
+    eprintln!("[DEBUG] Extracting missing icons for {} heroes via text file...", to_extract.len());
+
+    let (_stdout, _stderr) = run_uasset_tool_cli(
+        &tool_path,
+        &[
+            "extract_iostore_legacy",
+            &paks_path,
+            &batch_extract_dir.to_string_lossy(),
+            "--filter",
+            &filters_txt.to_string_lossy(),
+        ],
+    )
+    .await?;
+
+    let uassets = find_files_recursive(&batch_extract_dir, ".uasset");
+    eprintln!("[DEBUG] Found {} .uasset files in batch extract dir", uassets.len());
+    if uassets.is_empty() {
+        eprintln!("[DEBUG] No .uasset files found, batch extraction may have failed");
+        return Ok(());
+    }
+
+    fs::create_dir_all(&icons_dir).map_err(|e| e.to_string())?;
+
+    // Build file_paths list for batch extraction
+    let file_paths: Vec<String> = uassets.iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    eprintln!("[DEBUG] Sending batch_extract_texture_png for {} files (parallel=true)", file_paths.len());
+
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+
+    let request = serde_json::json!({
+        "action": "batch_extract_texture_png",
+        "file_paths": file_paths,
+        "output_path": icons_dir.to_string_lossy(),
+        "usmap_path": usmap_path,
+        "parallel": true,
+    });
+
+    match send_tool_request(proc, &request).await {
+        Ok(resp) => {
+            let success = resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let msg = resp.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown");
+            if success {
+                eprintln!("[DEBUG] Batch texture extraction succeeded: {}", msg);
+            } else {
+                eprintln!("[DEBUG] Batch texture extraction failed: {}", msg);
+            }
+        }
+        Err(e) => {
+            eprintln!("[DEBUG] send_tool_request error for batch_extract_texture_png: {}", e);
+        }
+    }
+
+    drop(process_guard);
+
+    // Rename extracted PNGs from their stem names (e.g. img_squarehead_1011.png) to hero_id.png (e.g. 1011.png)
+    for id in &to_extract {
+        // Look for PNGs matching this hero_id in the icons dir
+        let mut found = false;
+        if let Ok(entries) = fs::read_dir(&icons_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map(|e| e == "png").unwrap_or(false) {
+                    let stem = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                    if stem.contains(id) {
+                        let target = icons_dir.join(format!("{}.png", id));
+                        if target.exists() {
+                            let _ = fs::remove_file(&target);
+                        }
+                        if let Err(e) = fs::rename(&path, &target) {
+                            eprintln!("[DEBUG] Failed to rename {:?} -> {:?}: {}", path, target, e);
+                        } else {
+                            eprintln!("[DEBUG] Renamed {:?} -> {:?}", path.file_name().unwrap_or_default(), target.file_name().unwrap_or_default());
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if !found {
+            eprintln!("[DEBUG] No PNG found to rename for hero_id={}", id);
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_hero_icon_data_url(
+    hero_id: String,
+) -> Result<String, String> {
+    eprintln!("[DEBUG] get_hero_icon_data_url called for hero_id={}", hero_id);
+
+    let icons_dir = get_hero_icons_dir();
+    let icon_png = icons_dir.join(format!("{}.png", hero_id));
+
+    // If icon doesn't exist, return empty (frontend will use placeholder)
+    // Extraction is handled by batch_extract_hero_icons, not here
+    if !icon_png.exists() {
+        eprintln!("[DEBUG] Icon not found for hero_id={}, returning empty", hero_id);
+        return Ok(String::new());
+    }
+
+    // Brief check: if file was just written, wait for size to stabilize.
+    // For already-cached files this completes in one iteration with no sleep.
+    if let Ok(meta) = std::fs::metadata(&icon_png) {
+        let initial_size = meta.len();
+        if initial_size == 0 {
+            // File exists but is empty – wait for it to be written
+            let mut last_size = 0u64;
+            let mut stagnant_count = 0;
+            for _ in 0..20 {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                if let Ok(m) = std::fs::metadata(&icon_png) {
+                    let size = m.len();
+                    if size > 0 && size == last_size {
+                        stagnant_count += 1;
+                        if stagnant_count >= 2 { break; }
+                    } else {
+                        last_size = size;
+                        stagnant_count = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    match std::fs::read(&icon_png) {
+        Ok(image_data) => {
+            if image_data.is_empty() {
+                eprintln!("[DEBUG] Warning: Icon {} is 0 bytes after wait!", hero_id);
+                return Ok(String::new());
+            }
+            
+            // Convert to base64 data URL
+            let base64_data = general_purpose::STANDARD.encode(&image_data);
+            let data_url = format!("data:image/png;base64,{}", base64_data);
+            eprintln!("[DEBUG] Serving icon as data URL for hero {} (size: {} bytes)", hero_id, image_data.len());
+            Ok(data_url)
+        }
+        Err(e) => {
+            eprintln!("[DEBUG] Failed to read icon file {:?}: {}", icon_png, e);
+            Err(format!("Failed to read icon: {}", e))
+        }
+    }
+}
+
+#[tauri::command]
+async fn extract_hero_vfx(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    hero_id: String,
+) -> Result<HeroVfxResult, String> {
+    eprintln!("[DEBUG] extract_hero_vfx called for hero_id={}", hero_id);
+
+    let extract_dir = get_hero_cache_dir().join("vfx").join("extracted").join(&hero_id);
+    let json_dir = get_hero_cache_dir().join("vfx").join("json").join(&hero_id);
+
+    // Check if already extracted
+    let existing_uassets = if extract_dir.exists() { find_files_recursive(&extract_dir, ".uasset") } else { vec![] };
+    let has_uassets = !existing_uassets.is_empty();
+
+    if has_uassets {
+        eprintln!("[DEBUG] Hero VFX UAssets already extracted, skipping extraction but re-converting to JSON...");
+    } else {
+        // Step 1: Extract VFX materials via CLI
+        fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
+
+        // Emit progress event
+        let _ = app.emit(
+            "conversion-progress",
+            ConversionProgress {
+                progress_type: Some("progress".to_string()),
+                current: 0,
+                total: 0,
+                file_name: format!("Extracting VFX for hero {}...", hero_id),
+                cached: false,
+                error: None,
+            },
+        );
+
+        let (paks_path, _usmap_path) = {
+            let settings = state.settings.lock().unwrap();
+            (settings.paks_path.clone(), settings.usmap_path.clone())
+        };
+        let paks_path = paks_path.ok_or_else(|| "Game Paks path not set. Please set it in Settings.".to_string())?;
+        let tool_path = get_uasset_tool_path(&app);
+
+        // Filter patterns for hero VFX materials
+        let filter_materials = format!("VFX/Materials/Characters/{}/Materials", hero_id);
+        let filter_master = format!("VFX/Materials/Characters/{}/MasterMaterials", hero_id);
+
+        let (_stdout, _stderr) = run_uasset_tool_cli(
+            &tool_path,
+            &[
+                "extract_iostore_legacy",
+                &paks_path,
+                &extract_dir.to_string_lossy(),
+                "--filter",
+                &filter_materials,
+                &filter_master,
+            ],
+        )
+        .await?;
+    }
+
+    // Step 2: Convert all extracted .uasset to JSON (this ensures we always have the original colors)
+    let uasset_files = find_files_recursive(&extract_dir, ".uasset");
+    if uasset_files.is_empty() {
+        return Err(format!("No VFX materials found for hero {}", hero_id));
+    }
+
+    fs::create_dir_all(&json_dir).map_err(|e| e.to_string())?;
+    
+    // Clear the JSON directory to ensure we don't have stale/dirty files
+    if let Ok(entries) = fs::read_dir(&json_dir) {
+        for entry in entries.flatten() {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+
+    let (usmap_path, tool_path) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.usmap_path.clone(), get_uasset_tool_path(&app))
+    };
+
+    let total = uasset_files.len();
+
+    // Emit progress event for the batch conversion phase
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: 0,
+            total,
+            file_name: format!("Converting {} assets...", total),
+            cached: false,
+            error: None,
+        },
+    );
+
+    let file_paths: Vec<String> = uasset_files.iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    eprintln!("[DEBUG] Sending batch_to_json for {} files", file_paths.len());
+
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+
+    let request = serde_json::json!({
+        "action": "batch_to_json",
+        "file_paths": file_paths,
+        "output_path": json_dir.to_string_lossy(),
+        "base_path": extract_dir.to_string_lossy(),
+        "usmap_path": usmap_path,
+    });
+
+    let mut json_paths = Vec::new();
+    match send_tool_request(proc, &request).await {
+        Ok(resp) => {
+            let success = resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let msg = resp.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown");
+            if success {
+                eprintln!("[DEBUG] Batch to_json succeeded: {}", msg);
+            } else {
+                eprintln!("[DEBUG] Batch to_json failed: {}", msg);
+            }
+            // Log any errors from the batch
+            if let Some(errors) = resp.get("data").and_then(|d| d.get("errors")).and_then(|e| e.as_array()) {
+                for err in errors {
+                    eprintln!("[DEBUG] Batch to_json error: {:?}", err);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[DEBUG] send_tool_request error for batch_to_json: {}", e);
+        }
+    }
+
+    drop(process_guard);
+
+    // Build json_paths by scanning the json output directory recursively
+    json_paths = find_files_recursive(&json_dir, ".json")
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: total,
+            total,
+            file_name: "Conversion complete!".to_string(),
+            cached: false,
+            error: None,
+        },
+    );
+
+    eprintln!(
+        "[DEBUG] Hero VFX conversion complete: {}/{} JSON files",
+        json_paths.len(),
+        total
+    );
+
+    Ok(HeroVfxResult {
+        hero_id: hero_id.clone(),
+        uasset_paths: uasset_files
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect(),
+        json_paths,
+        cached: false,
+        error: None,
+    })
+}
+
+/// Recursively find first file matching a name pattern in a directory.
+fn find_file_recursive(dir: &Path, pattern: &str) -> Option<PathBuf> {
+    if !dir.exists() {
+        return None;
+    }
+    for entry in fs::read_dir(dir).ok()? {
+        let entry = entry.ok()?;
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_file_recursive(&path, pattern) {
+                return Some(found);
+            }
+        } else if path
+            .file_name()
+            .map(|n| n.to_string_lossy().contains(pattern))
+            .unwrap_or(false)
+        {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Recursively find all files matching an extension in a directory.
+fn find_files_recursive(dir: &Path, extension: &str) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    if !dir.exists() {
+        return results;
+    }
+    fn visit(dir: &Path, ext: &str, results: &mut Vec<PathBuf>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    visit(&path, ext, results);
+                } else if path
+                    .extension()
+                    .map(|e| format!(".{}", e.to_string_lossy()) == ext)
+                    .unwrap_or(false)
+                {
+                    results.push(path);
+                }
+            }
+        }
+    }
+    visit(dir, extension, &mut results);
+    results
+}
+
+#[tauri::command]
+fn scan_directory_for_uassets(directory: String) -> Result<Vec<String>, String> {
+    let dir = Path::new(&directory);
+    if !dir.exists() {
+        return Err(format!("Directory does not exist: {}", directory));
+    }
+    let files = find_files_recursive(dir, ".uasset");
+    Ok(files.iter().map(|p| p.to_string_lossy().to_string()).collect())
+}
+
+#[tauri::command]
+async fn batch_convert_directory(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    directory: String,
+) -> Result<HeroVfxResult, String> {
+    let root_dir = PathBuf::from(&directory);
+    if !root_dir.exists() {
+        return Err(format!("Directory does not exist: {}", directory));
+    }
+
+    let uasset_files = find_files_recursive(&root_dir, ".uasset");
+    if uasset_files.is_empty() {
+        return Err("No .uasset files found in directory.".to_string());
+    }
+
+    let total = uasset_files.len();
+    eprintln!("[DEBUG] batch_convert_directory: found {} .uasset files in {}", total, directory);
+
+    let (usmap_path, tool_path) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.usmap_path.clone(), get_uasset_tool_path(&app))
+    };
+
+    let root_name = root_dir.file_name().and_then(|n| n.to_str()).unwrap_or("load");
+    let json_dir = get_cache_dir().join("manual").join(root_name);
+    fs::create_dir_all(&json_dir).map_err(|e| e.to_string())?;
+
+    // Clear the json_dir to ensure fresh conversion
+    if let Ok(entries) = fs::read_dir(&json_dir) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                let _ = fs::remove_dir_all(entry.path());
+            } else {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: 0,
+            total,
+            file_name: format!("Scanning and converting {} assets...", total),
+            cached: false,
+            error: None,
+        },
+    );
+
+    let file_paths: Vec<String> = uasset_files.iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+
+    let request = serde_json::json!({
+        "action": "batch_to_json",
+        "file_paths": file_paths,
+        "output_path": json_dir.to_string_lossy(),
+        "base_path": root_dir.to_string_lossy(),
+        "usmap_path": usmap_path,
+    });
+
+    match send_tool_request(proc, &request).await {
+        Ok(resp) => {
+            let success = resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let msg = resp.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown");
+            if success {
+                eprintln!("[DEBUG] batch_convert_directory: batch_to_json succeeded: {}", msg);
+            } else {
+                eprintln!("[DEBUG] batch_convert_directory: batch_to_json failed: {}", msg);
+            }
+            if let Some(errors) = resp.get("data").and_then(|d| d.get("errors")).and_then(|e| e.as_array()) {
+                for err in errors {
+                    eprintln!("[DEBUG] batch_convert_directory error: {:?}", err);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[DEBUG] batch_convert_directory send_tool_request error: {}", e);
+        }
+    }
+
+    drop(process_guard);
+
+    // Only match JSON files that correspond to the input uasset files
+    let expected_stems: std::collections::HashSet<String> = file_paths
+        .iter()
+        .filter_map(|p| {
+            Path::new(p)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_lowercase())
+        })
+        .collect();
+
+    let json_paths: Vec<String> = find_files_recursive(&json_dir, ".json")
+        .iter()
+        .filter(|p| {
+            p.file_stem()
+                .map(|s| expected_stems.contains(&s.to_string_lossy().to_lowercase()))
+                .unwrap_or(false)
+        })
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: total,
+            total,
+            file_name: "Conversion complete!".to_string(),
+            cached: false,
+            error: None,
+        },
+    );
+
+    eprintln!(
+        "[DEBUG] batch_convert_directory complete: {}/{} JSON files",
+        json_paths.len(),
+        total
+    );
+
+    Ok(HeroVfxResult {
+        hero_id: String::new(),
+        uasset_paths: file_paths,
+        json_paths,
+        cached: false,
+        error: None,
+    })
+}
+
+#[tauri::command]
+async fn batch_convert_files(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    uasset_paths: Vec<String>,
+    base_path: String,
+) -> Result<HeroVfxResult, String> {
+    if uasset_paths.is_empty() {
+        return Err("No files provided.".to_string());
+    }
+
+    let total = uasset_paths.len();
+    eprintln!("[DEBUG] batch_convert_files: converting {} files", total);
+
+    let (usmap_path, tool_path) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.usmap_path.clone(), get_uasset_tool_path(&app))
+    };
+
+    let root_name = Path::new(&base_path).file_name().and_then(|n| n.to_str()).unwrap_or("files");
+    let json_dir = get_cache_dir().join("manual").join(root_name);
+    fs::create_dir_all(&json_dir).map_err(|e| e.to_string())?;
+
+    // Clear the json_dir to ensure fresh conversion
+    if let Ok(entries) = fs::read_dir(&json_dir) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                let _ = fs::remove_dir_all(entry.path());
+            } else {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: 0,
+            total,
+            file_name: format!("Converting {} assets...", total),
+            cached: false,
+            error: None,
+        },
+    );
+
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+
+    let request = serde_json::json!({
+        "action": "batch_to_json",
+        "file_paths": uasset_paths,
+        "output_path": json_dir.to_string_lossy(),
+        "base_path": base_path,
+        "usmap_path": usmap_path,
+    });
+
+    match send_tool_request(proc, &request).await {
+        Ok(resp) => {
+            let success = resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let msg = resp.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown");
+            if success {
+                eprintln!("[DEBUG] batch_convert_files: succeeded: {}", msg);
+            } else {
+                eprintln!("[DEBUG] batch_convert_files: failed: {}", msg);
+            }
+            if let Some(errors) = resp.get("data").and_then(|d| d.get("errors")).and_then(|e| e.as_array()) {
+                for err in errors {
+                    eprintln!("[DEBUG] batch_convert_files error: {:?}", err);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[DEBUG] batch_convert_files send_tool_request error: {}", e);
+        }
+    }
+
+    drop(process_guard);
+
+    // Only match JSON files that correspond to the input uasset files
+    let expected_stems: std::collections::HashSet<String> = uasset_paths
+        .iter()
+        .filter_map(|p| {
+            Path::new(p)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_lowercase())
+        })
+        .collect();
+
+    let json_paths: Vec<String> = find_files_recursive(&json_dir, ".json")
+        .iter()
+        .filter(|p| {
+            p.file_stem()
+                .map(|s| expected_stems.contains(&s.to_string_lossy().to_lowercase()))
+                .unwrap_or(false)
+        })
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: total,
+            total,
+            file_name: "Conversion complete!".to_string(),
+            cached: false,
+            error: None,
+        },
+    );
+
+    Ok(HeroVfxResult {
+        hero_id: String::new(),
+        uasset_paths,
+        json_paths,
+        cached: false,
+        error: None,
+    })
+}
+
+async fn fetch_latest_usmap_filename() -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.github.com/repos/SpaceDepot/rivals-depot/contents/usmap")
+        .header("User-Agent", "rivals-vfx-editor")
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch usmap listing: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub API returned HTTP {}",
+            response.status()
+        ));
+    }
+
+    let entries: Vec<serde_json::Value> = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GitHub API response: {}", e))?;
+
+    // Find the file with the highest build number
+    // Files look like: 5.3.2-3312577+++depot_marvel+S7.5_release-Marvel.usmap
+    // We extract the build number (e.g., 3312577) and pick the highest
+    let mut best: Option<(u64, String)> = None;
+
+    for entry in &entries {
+        if let Some(name) = entry.get("name").and_then(|v| v.as_str()) {
+            if !name.ends_with(".usmap") {
+                continue;
+            }
+            // Skip PY_ prefixed files (PlayTest/Preview builds)
+            if name.starts_with("PY_") {
+                continue;
+            }
+            // Extract build number: "5.3.2-{number}+++"
+            if let Some(after_dash) = name.strip_prefix("5.3.2-") {
+                if let Some(plus_idx) = after_dash.find("+++") {
+                    if let Ok(build_num) = after_dash[..plus_idx].parse::<u64>() {
+                        if best.as_ref().map_or(true, |(b, _)| build_num > *b) {
+                            best = Some((build_num, name.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    best.map(|(_, name)| name)
+        .ok_or_else(|| "No usmap files found in repository".to_string())
+}
+
+#[tauri::command]
+async fn check_usmap_status(state: State<'_, AppState>) -> Result<UsmapStatus, String> {
+    let settings_usmap = {
+        let settings = state.settings.lock().unwrap();
+        settings.usmap_path.clone()
+    };
+
+    let meta_path = get_usmap_meta_path();
+    let meta: Option<UsmapMeta> = if meta_path.exists() {
+        fs::read_to_string(&meta_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+    } else {
+        None
+    };
+
+    // Determine if current usmap is auto-managed (lives in our managed dir)
+    let managed_dir = get_usmap_dir();
+    let auto_managed = settings_usmap
+        .as_ref()
+        .map(|p| Path::new(p).starts_with(&managed_dir))
+        .unwrap_or(false);
+
+    // Check if usmap file actually exists
+    let installed = settings_usmap
+        .as_ref()
+        .map(|p| Path::new(p).exists())
+        .unwrap_or(false);
+
+    // Try to fetch latest remote filename
+    let latest_remote = fetch_latest_usmap_filename().await.ok();
+
+    let needs_update = if let (Some(ref remote), Some(ref m)) = (&latest_remote, &meta) {
+        *remote != m.file_name
+    } else if latest_remote.is_some() && meta.is_none() {
+        true
+    } else {
+        false
+    };
+
+    Ok(UsmapStatus {
+        installed,
+        file_name: meta.as_ref().map(|m| m.file_name.clone()).or_else(|| {
+            settings_usmap.as_ref().and_then(|p| {
+                Path::new(p).file_name().map(|f| f.to_string_lossy().to_string())
+            })
+        }),
+        file_path: settings_usmap,
+        needs_update,
+        latest_remote,
+        auto_managed,
+    })
+}
+
+#[tauri::command]
+async fn fetch_latest_usmap(state: State<'_, AppState>) -> Result<UsmapStatus, String> {
+    let file_name = fetch_latest_usmap_filename().await?;
+    let download_url = format!(
+        "https://raw.githubusercontent.com/SpaceDepot/rivals-depot/main/usmap/{}",
+        file_name
+    );
+
+    eprintln!("[DEBUG] Downloading usmap: {}", download_url);
+
+    let response = reqwest::get(&download_url)
+        .await
+        .map_err(|e| format!("Failed to download usmap: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Failed to download usmap: HTTP {}",
+            response.status()
+        ));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read usmap data: {}", e))?;
+
+    let usmap_dir = get_usmap_dir();
+    fs::create_dir_all(&usmap_dir).map_err(|e| format!("Failed to create mappings dir: {}", e))?;
+
+    let usmap_path = usmap_dir.join(&file_name);
+    fs::write(&usmap_path, &bytes).map_err(|e| format!("Failed to write usmap file: {}", e))?;
+
+    // Save metadata
+    let meta = UsmapMeta {
+        file_name: file_name.clone(),
+        file_path: usmap_path.to_string_lossy().to_string(),
+        fetched_at: chrono::Utc::now().to_rfc3339(),
+    };
+    let meta_json =
+        serde_json::to_string_pretty(&meta).map_err(|e| format!("Failed to serialize meta: {}", e))?;
+    fs::write(get_usmap_meta_path(), meta_json)
+        .map_err(|e| format!("Failed to write meta file: {}", e))?;
+
+    // Update app settings to point to the new usmap
+    let usmap_path_str = usmap_path.to_string_lossy().to_string();
+    {
+        let mut settings = state.settings.lock().unwrap();
+        settings.usmap_path = Some(usmap_path_str.clone());
+        save_settings(&settings).map_err(|e| format!("Failed to save settings: {}", e))?;
+    }
+
+    eprintln!("[DEBUG] Usmap installed: {} -> {:?}", file_name, usmap_path);
+
+    Ok(UsmapStatus {
+        installed: true,
+        file_name: Some(file_name),
+        file_path: Some(usmap_path_str),
+        needs_update: false,
+        latest_remote: None,
+        auto_managed: true,
     })
 }
 
@@ -997,12 +2921,15 @@ pub fn run() {
         .manage(AppState {
             settings: Mutex::new(settings),
             cache_index: Mutex::new(cache_index),
+            tool_process: TokioMutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
             set_usmap_path,
+            set_paks_path,
             set_detailed_errors,
             set_auto_clear_cache,
+            set_ui_scale,
             set_filter_dictionary,
             get_cache_info,
             clear_cache,
@@ -1012,6 +2939,21 @@ pub fn run() {
             batch_convert_jsons_to_uassets,
             get_exe_dir,
             log_unique_params,
+            get_hero_roster,
+            batch_extract_hero_icons,
+            get_hero_icon_data_url,
+            extract_hero_vfx,
+            get_hero_browser_cache_info,
+            get_vfx_cache_info,
+            clear_hero_browser_cache,
+            clear_vfx_cache,
+            open_cache_folder,
+            open_folder,
+            check_usmap_status,
+            fetch_latest_usmap,
+            scan_directory_for_uassets,
+            batch_convert_directory,
+            batch_convert_files,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1024,13 +2966,31 @@ pub fn run() {
                 };
 
                 if should_clear {
-                    let cache_dir = get_cache_dir();
-                    if cache_dir.exists() {
-                        let _ = fs::remove_dir_all(&cache_dir);
+                    // Clear VFX materials cache
+                    let vfx_dir = get_hero_cache_dir().join("vfx");
+                    if vfx_dir.exists() {
+                        let _ = fs::remove_dir_all(&vfx_dir);
                     }
+                    // Clear conversion cache (JSON files) but preserve hero browser data
+                    let cache_dir = get_cache_dir();
                     let mut cache_index = state.cache_index.lock().unwrap();
                     cache_index.entries.clear();
                     let _ = save_cache_index(&cache_index);
+                    // Remove cached JSON files but keep the hero-browser subdirectory
+                    if let Ok(entries) = fs::read_dir(&cache_dir) {
+                        for entry in entries.filter_map(|e| e.ok()) {
+                            let path = entry.path();
+                            let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                            if name == "hero-browser" || name == "index.json" {
+                                continue;
+                            }
+                            if path.is_dir() {
+                                let _ = fs::remove_dir_all(&path);
+                            } else {
+                                let _ = fs::remove_file(&path);
+                            }
+                        }
+                    }
                 }
             }
         });
