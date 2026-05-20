@@ -98,7 +98,7 @@ export function Header({
         <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className="h-24 filter brightness-0 invert" />
         <div className="flex items-baseline gap-3">
           <h1 className="text-5xl font-normal" style={{ color: 'var(--text-1)' }}>Rivals VFX Editor</h1>
-          <h2 className="text-1xl font-medium" style={{ color: 'var(--text-4)' }}>v3.1.0</h2>
+          <h2 className="text-1xl font-medium" style={{ color: 'var(--text-4)' }}>v3.1.1</h2>
         </div>
       </div>
       <span className="absolute bottom-2 right-4 text-xs" style={{ color: 'var(--text-4)', zIndex: 1 }}>
