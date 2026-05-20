@@ -19,6 +19,7 @@ import { DebugConsole } from '@/components/DebugConsole';
 import { GlobalControls } from '@/components/GlobalControls';
 import { ParameterTable } from '@/components/ParameterTable';
 import { ColorRangeFilter } from '@/components/ColorRangeFilter';
+import { LumaRangeFilter } from '@/components/LumaRangeFilter';
 import { LoadFilesPanel } from '@/components/LoadFilesPanel';
 import { StyledPanel } from '@/components/ui';
 import { SettingsModal, FilterSettingsModal, ConversionProgressOverlay, HeroBrowserModal } from '@/components/modals';
@@ -43,7 +44,8 @@ export function App() {
   const debug = useDebugLog();
   const { colorParams, recordHistory, handleUndo, handleRedo, historyIndex, historyLength, resetHistory, setInitialHistory } = history;
 
-  const keyboard = useKeyboard(handleUndo, handleRedo);
+  const selectAllRef = useRef<() => void>();
+  const keyboard = useKeyboard(handleUndo, handleRedo, () => selectAllRef.current?.());
 
   const [originalFiles, setOriginalFiles] = useState<Record<string, any>>({});
   const [selectedParams, setSelectedParams] = useState<Set<string>>(new Set());
@@ -57,9 +59,11 @@ export function App() {
   const [ignoreGrayscale, setIgnoreGrayscale] = useState(true);
   const [preserveIntensity, setPreserveIntensity] = useState(true);
   const [showGrayscale, setShowGrayscale] = useState(true);
+  const [showColor, setShowColor] = useState(true);
   const [showEnemy, setShowEnemy] = useState(true);
   const [hueShiftValue, setHueShiftValue] = useState(0);
   const [hueRange, setHueRange] = useState<[number, number]>([0, 360]);
+  const [lumaRange, setLumaRange] = useState<[number, number]>([0, 100]);
   const [useFiveColors, setUseFiveColors] = useState(false);
   const [shuffleColors, setShuffleColors] = useState(['#ccffff', '#88eeee', '#66dddd']);
   const [brightnessMultiplier, setBrightnessMultiplier] = useState(1.0);
@@ -171,17 +175,37 @@ export function App() {
     manageUsmap();
   }, []);
 
-  // === DRAG/DROP SYSTEM LISTENER ===
+  // === PREVENT GLOBAL DRAG/DROP NAVIGATION ===
   useEffect(() => {
+    const preventDefault = (e: DragEvent) => e.preventDefault();
+    window.addEventListener('dragover', preventDefault);
+    window.addEventListener('drop', preventDefault);
+    return () => {
+      window.removeEventListener('dragover', preventDefault);
+      window.removeEventListener('drop', preventDefault);
+    };
+  }, []);
+
+  // === DRAG/DROP SYSTEM LISTENER ===
+  const colorParamsRef = useRef(colorParams);
+  const processFileObjectsRef = useRef<any>(null);
+
+  useEffect(() => {
+    colorParamsRef.current = colorParams;
+  }, [colorParams]);
+
+  useEffect(() => {
+    let isMounted = true;
     let unlistenDrop: (() => void) | null = null;
     let unlistenEnter: (() => void) | null = null;
     let unlistenLeave: (() => void) | null = null;
 
     const setupListener = async () => {
-      unlistenEnter = await tauri.listen('tauri://drag-enter', () => setIsDragging(true));
-      unlistenLeave = await tauri.listen('tauri://drag-leave', () => setIsDragging(false));
+      const enter = await tauri.listen('tauri://drag-enter', () => { if (isMounted) setIsDragging(true); });
+      const leave = await tauri.listen('tauri://drag-leave', () => { if (isMounted) setIsDragging(false); });
 
-      unlistenDrop = await tauri.listen('tauri://drag-drop', async (event: any) => {
+      const drop = await tauri.listen('tauri://drag-drop', async (event: any) => {
+        if (!isMounted) return;
         setIsDragging(false);
         const payload = event.payload;
         const paths: string[] = payload.paths || payload;
@@ -266,19 +290,32 @@ export function App() {
             setConversionProgress({ current: 1, total: 1, fileName: 'Extracting color parameters...' });
             await new Promise(resolve => setTimeout(resolve, 50));
           }
-          processFileObjects(fileObjects, colorParams.length > 0);
+          const currentParams = colorParamsRef.current;
+          processFileObjectsRef.current?.(fileObjects, currentParams.length > 0);
         }
         setIsConverting(false);
         setConversionProgress({ current: 0, total: 0, fileName: '' });
       });
+
+      if (isMounted) {
+        unlistenEnter = enter;
+        unlistenLeave = leave;
+        unlistenDrop = drop;
+      } else {
+        enter();
+        leave();
+        drop();
+      }
     };
     setupListener();
+
     return () => {
+      isMounted = false;
       if (unlistenDrop) unlistenDrop();
       if (unlistenEnter) unlistenEnter();
       if (unlistenLeave) unlistenLeave();
     };
-  }, [colorParams]);
+  }, []);
 
   // === PROCESS FILE OBJECTS ===
   const processFileObjects = useCallback((fileObjects: FileObject[], append = false) => {
@@ -310,6 +347,10 @@ export function App() {
     const uniqueParamNames = [...new Set(allParams.map(p => p.paramName))].sort();
     tauri.logUniqueParams(uniqueParamNames).catch(e => console.error('Failed to log params:', e));
   }, [colorParams, originalFiles, filterDictionary, debug.addLog, recordHistory, setInitialHistory]);
+
+  useEffect(() => {
+    processFileObjectsRef.current = processFileObjects;
+  }, [processFileObjects]);
 
   // === COLOR ACTIONS ===
   const handleParamChange = useCallback((id: string, newRgba: RGBA) => {
@@ -407,10 +448,35 @@ export function App() {
       });
     }
     if (!showGrayscale) params = params.filter(p => p.rgba.R !== p.rgba.G || p.rgba.G !== p.rgba.B);
+    if (!showColor) params = params.filter(p => p.rgba.R === p.rgba.G && p.rgba.G === p.rgba.B);
     if (!showEnemy) params = params.filter(p => !p.paramName.toLowerCase().includes('enemy') && !p.fileName.toLowerCase().includes('enemy') && !p.relativePath.toLowerCase().includes('enemy'));
-    if (searchTerm) params = params.filter(p => p.paramName.toLowerCase().includes(searchTerm.toLowerCase()) || p.fileName.toLowerCase().includes(searchTerm.toLowerCase()));
+    if (searchTerm) {
+      const terms = searchTerm.split(',').map(t => t.trim()).filter(Boolean);
+      const positiveTerms = terms.filter(t => !t.startsWith('-'));
+      const negativeTerms = terms.filter(t => t.startsWith('-')).map(t => t.slice(1).trim()).filter(Boolean);
+
+      const matchTerm = (p: ColorParam, term: string) => {
+        const isRegex = term.startsWith('/') && term.endsWith('/') && term.length > 2;
+        if (isRegex) {
+          try {
+            const regex = new RegExp(term.slice(1, -1), 'i');
+            return regex.test(p.paramName) || regex.test(p.relativePath);
+          } catch (e) {
+            // fallback to literal
+          }
+        }
+        const lowerTerm = term.toLowerCase();
+        return p.paramName.toLowerCase().includes(lowerTerm) || p.relativePath.toLowerCase().includes(lowerTerm);
+      };
+
+      params = params.filter(p => {
+        const matchesPositive = positiveTerms.length === 0 || positiveTerms.some(term => matchTerm(p, term));
+        const matchesNegative = negativeTerms.length > 0 && negativeTerms.some(term => matchTerm(p, term));
+        return matchesPositive && !matchesNegative;
+      });
+    }
     return params;
-  }, [colorParams, searchTerm, showGrayscale, showEnemy, selectedFolders, folders, sortConfig]);
+  }, [colorParams, searchTerm, showGrayscale, showColor, showEnemy, selectedFolders, folders, sortConfig]);
 
   const filteredParams = useMemo(() => {
     let params = [...baseFilteredParams];
@@ -422,8 +488,15 @@ export function App() {
         return hueDeg >= hueRange[0] && hueDeg <= hueRange[1];
       });
     }
+    if (lumaRange[0] !== 0 || lumaRange[1] !== 100) {
+      params = params.filter(p => {
+        const [_, __, l] = rgbToHsl(p.rgba.R, p.rgba.G, p.rgba.B);
+        const lumaPct = l * 100;
+        return lumaPct >= lumaRange[0] && lumaPct <= lumaRange[1];
+      });
+    }
     return params;
-  }, [baseFilteredParams, hueRange]);
+  }, [baseFilteredParams, hueRange, lumaRange]);
 
   const handleSelectionChange = useCallback((id: string) => {
     const index = filteredParams.findIndex(p => p.id === id);
@@ -449,6 +522,10 @@ export function App() {
     if (selectedParams.size === filteredParams.length) setSelectedParams(new Set());
     else setSelectedParams(new Set(filteredParams.map(p => p.id)));
   }, [selectedParams.size, filteredParams]);
+
+  useEffect(() => {
+    selectAllRef.current = handleSelectAll;
+  }, [handleSelectAll]);
 
   const requestSort = useCallback((key: string) => {
     let direction: 'ascending' | 'descending' | 'none' = 'ascending';
@@ -760,20 +837,24 @@ export function App() {
   }, [resetHistory]);
 
   // === HERO VFX SELECT ===
-  const handleHeroSelect = useCallback(async (heroId: string, heroName: string) => {
-    console.debug('[App] handleHeroSelect', heroId, heroName);
+  const handleHeroSelect = useCallback(async (heroId: string, heroName: string, koMode = false) => {
+    console.debug('[App] handleHeroSelect', heroId, heroName, koMode);
     setShowHeroBrowser(false);
     setIsConverting(true);
-    setConversionProgress({ current: 0, total: 1, fileName: `Extracting VFX for ${heroName}...` });
+    setConversionProgress({ current: 0, total: 1, fileName: koMode ? `Extracting KO Prompt for ${heroName}...` : `Extracting VFX for ${heroName}...` });
 
     try {
-      debug.addLog(`Extracting VFX materials for ${heroName} (${heroId})...`);
-      const result = await tauri.extractHeroVfx(heroId);
-      console.debug('[App] Hero VFX result:', result);
+      if (koMode) {
+        debug.addLog(`Extracting KO Prompt WBP for ${heroName} (${heroId})...`);
+      } else {
+        debug.addLog(`Extracting VFX materials for ${heroName} (${heroId})...`);
+      }
+      const result = await tauri.extractHeroVfx(heroId, koMode);
+      console.debug('[App] Hero extract result:', result);
 
       if (result.error && result.json_paths.length === 0) {
-        debug.addLog(`Hero VFX extraction warning: ${result.error}`);
-        alert(`No VFX materials found for ${heroName}. ${result.error}`);
+        debug.addLog(`Hero extraction warning: ${result.error}`);
+        alert(`No assets found for ${heroName}. ${result.error}`);
         setIsConverting(false);
         setConversionProgress({ current: 0, total: 0, fileName: '' });
         return;
@@ -794,23 +875,27 @@ export function App() {
 
         try {
           const content = await tauri.readTextFile(jsonPath);
-          // Build a relative path like: heroId/Materials/filename.json
-          // Find heroId after "Characters" to skip the deep game path prefix
+          // Build a relative path. Skip cache path prefix dynamically:
           const parts = jsonPath.replace(/\\/g, '/').split('/');
+          const customIdx = parts.findIndex(p => p === 'Custom');
           const charsIdx = parts.findIndex(p => p === 'Characters');
-          const heroIdx = charsIdx >= 0
-            ? parts.indexOf(heroId, charsIdx + 1)
-            : parts.lastIndexOf(heroId);
-          const relativePath = heroIdx >= 0
-            ? parts.slice(heroIdx).join('/')
-            : `${heroId}/${fileName}`;
+          let relativePath = '';
+          if (customIdx >= 0) {
+            relativePath = parts.slice(customIdx + 1).join('/');
+          } else if (charsIdx >= 0) {
+            const heroIdx = parts.indexOf(heroId, charsIdx + 1);
+            relativePath = heroIdx >= 0 ? parts.slice(heroIdx).join('/') : `${heroId}/${fileName}`;
+          } else {
+            const heroIdx = parts.lastIndexOf(heroId);
+            relativePath = heroIdx >= 0 ? parts.slice(heroIdx).join('/') : `${heroId}/${fileName}`;
+          }
 
           fileObjects.push({ name: fileName, content, relativePath });
           newSourceMap[relativePath] = { uassetPath, jsonPath };
 
           setConversionProgress({ current: i + 1, total: result.json_paths.length, fileName });
         } catch (readErr) {
-          console.error('[App] Failed to read hero VFX JSON:', jsonPath, readErr);
+          console.error('[App] Failed to read hero JSON:', jsonPath, readErr);
           debug.addLog(`Failed to read ${fileName}: ${readErr}`);
         }
       }
@@ -821,17 +906,17 @@ export function App() {
 
         // Set the uasset source map for save-back functionality
         setUassetSourceMap(prev => ({ ...prev, ...newSourceMap }));
-        setSessionName(heroName.replace(/\s+/g, '_'));
+        setSessionName(koMode ? `${heroName.replace(/\s+/g, '_')}_KO` : heroName.replace(/\s+/g, '_'));
 
         processFileObjects(fileObjects, colorParams.length > 0);
-        debug.addLog(`Loaded ${fileObjects.length} VFX materials for ${heroName}`);
+        debug.addLog(`Loaded ${fileObjects.length} assets for ${heroName}`);
       } else {
-        debug.addLog(`No readable VFX files found for ${heroName}`);
+        debug.addLog(`No readable files found for ${heroName}`);
       }
     } catch (err) {
-      console.error('[App] Hero VFX extraction failed:', err);
-      debug.addLog(`Hero VFX extraction failed: ${err}`);
-      alert(`Failed to extract VFX for ${heroName}: ${err}`);
+      console.error('[App] Hero extraction failed:', err);
+      debug.addLog(`Hero extraction failed: ${err}`);
+      alert(`Failed to extract assets for ${heroName}: ${err}`);
     } finally {
       setIsConverting(false);
       setConversionProgress({ current: 0, total: 0, fileName: '' });
@@ -892,80 +977,92 @@ export function App() {
                     <div className="flex justify-between items-start w-full gap-4">
                       <div className="hidden"></div>
                       <div className="flex flex-col gap-4 w-full">
-                        {/* Project Settings Row */}
-                        <div className="flex items-center justify-end gap-2">
-                          <label htmlFor="sessionNameInput" className="text-sm" style={{ color: 'var(--text-3)' }}>Project Filename:</label>
-                          <input id="sessionNameInput" type="text" value={sessionName} onChange={(e) => setSessionName(e.target.value)} className="w-48 px-3 py-1 rounded-none focus:outline-none focus:ring-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)' }} />
-                          <span className="text-sm" style={{ color: 'var(--text-4)' }}>.rvfxp</span>
-                          <button onClick={handleImportSession} title="Import Project" className="flex items-center justify-center w-8 h-8 rounded-none transition-colors shadow-md ml-2" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                          </button>
-                          <button onClick={handleExportSession} title="Export Selected to Project" className="flex items-center justify-center w-8 h-8 rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                          </button>
-                        </div>
-                        {/* Filter & Actions Row */}
-                        <div className="flex flex-col md:flex-row items-start justify-between gap-4 w-full">
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-4">
-                              <input type="text" placeholder="Filter by name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full sm:w-64 px-3 py-2 rounded-none focus:outline-none focus:ring-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)' }} />
-                              <label className="flex items-center text-sm cursor-pointer whitespace-nowrap" style={{ color: 'var(--text-3)' }}>
-                                <input type="checkbox" checked={showGrayscale} onChange={() => setShowGrayscale(!showGrayscale)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
-                                Show Grayscale
-                              </label>
-                              <label className="flex items-center text-sm cursor-pointer whitespace-nowrap" style={{ color: 'var(--text-3)' }}>
-                                <input type="checkbox" checked={showEnemy} onChange={() => setShowEnemy(!showEnemy)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
-                                Show Enemy
-                              </label>
-                            </div>
-                            {baseFilteredParams.length > 0 && (
-                              <ColorRangeFilter colorParams={baseFilteredParams} hueRange={hueRange} onHueRangeChange={setHueRange} />
-                            )}
-                            {folders.length > 1 && (
-                              <div>
-                                <h4 className="text-xs font-medium mb-1" style={{ color: 'var(--text-3)' }}>Filter by Folder:</h4>
-                                <div className="flex flex-wrap gap-x-4 gap-y-2">
-                                  {folders.map(folder => (
-                                    <label key={folder} className="flex items-center text-xs cursor-pointer" style={{ color: 'var(--text-3)' }} title="Alt + Click to solo select">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedFolders.has(folder)}
-                                        onClick={(e) => { if (e.altKey) { e.preventDefault(); handleFolderToggle(folder, true); } }}
-                                        onChange={(e) => { if (!(e.nativeEvent as MouseEvent).altKey) handleFolderToggle(folder); }}
-                                        className="w-3 h-3 rounded-none focus:ring-offset-0 focus:ring-0 mr-1"
-                                        style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}
-                                      />
-                                      {folder === '/' ? 'Root' : folder}
-                                    </label>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
+                        {/* Project Settings & Actions Row */}
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 w-full">
+                          {/* Project Filename */}
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <label htmlFor="sessionNameInput" className="text-sm" style={{ color: 'var(--text-3)' }}>Project Filename:</label>
+                            <input id="sessionNameInput" type="text" value={sessionName} onChange={(e) => setSessionName(e.target.value)} className="w-48 px-3 py-1 rounded-none focus:outline-none focus:ring-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)' }} />
+                            <span className="text-sm" style={{ color: 'var(--text-4)' }}>.rvfxp</span>
+                            <button onClick={handleImportSession} title="Import Project" className="flex items-center justify-center w-8 h-8 rounded-none transition-colors shadow-md ml-2" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                            </button>
+                            <button onClick={handleExportSession} title="Export Selected to Project" className="flex items-center justify-center w-8 h-8 rounded-none transition-colors shadow-md" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                            </button>
                           </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <div className="flex items-center gap-2">
-                              <button onClick={handleUndo} title="Undo (Ctrl+Z)" className="flex items-center justify-center p-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }} disabled={historyIndex === 0}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-                              </button>
-                              <button onClick={handleRedo} title="Redo (Ctrl+Y)" className="flex items-center justify-center p-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }} disabled={historyIndex >= historyLength - 1}>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                              </button>
-                              {Object.keys(uassetSourceMap).length > 0 ? (
-                                <button onClick={(e) => handleSaveAsUasset(e.shiftKey)} disabled={isConverting} title="Save edited files (Shift+click to save ALL)" className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 whitespace-nowrap w-auto" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
-                                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path></svg>
-                                  Save UAsset
-                                </button>
-                              ) : (
-                                <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md whitespace-nowrap w-auto" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
-                                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path></svg>
-                                  Save JSON
-                                </button>
-                              )}
-                            </div>
+
+                          {/* Undo, Redo, Save Actions */}
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                             {saveStatus && (
-                              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-4)' }}>{saveStatus}</span>
+                              <span className="text-xs whitespace-nowrap mr-2" style={{ color: 'var(--text-4)' }}>{saveStatus}</span>
+                            )}
+                            <button onClick={handleUndo} title="Undo (Ctrl+Z)" className="flex items-center justify-center p-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }} disabled={historyIndex === 0}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                            </button>
+                            <button onClick={handleRedo} title="Redo (Ctrl+Y)" className="flex items-center justify-center p-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }} disabled={historyIndex >= historyLength - 1}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                            </button>
+                            {Object.keys(uassetSourceMap).length > 0 ? (
+                              <button onClick={(e) => handleSaveAsUasset(e.shiftKey)} disabled={isConverting} title="Save edited files (Shift+click to save ALL)" className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 whitespace-nowrap w-auto" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
+                                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path></svg>
+                                Save UAsset
+                              </button>
+                            ) : (
+                              <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2 font-medium rounded-none transition-colors shadow-md whitespace-nowrap w-auto" style={{ backgroundColor: 'var(--accent-green)', color: 'var(--text-1)' }}>
+                                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 21v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4M7 21h10M5 21H3V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2h-2M12 11v-4M9 11h6"></path></svg>
+                                Save JSON
+                              </button>
                             )}
                           </div>
+                        </div>
+                        {/* Filter Row */}
+                        <div className="flex flex-col gap-2 w-full">
+                          <div className="flex items-center gap-4">
+                            <input type="text" placeholder="Filter by name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="flex-1 px-3 py-2 rounded-none focus:outline-none focus:ring-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)' }} />
+                            <label className="flex items-center text-sm cursor-pointer whitespace-nowrap" style={{ color: 'var(--text-3)' }}>
+                              <input type="checkbox" checked={showColor} onChange={() => setShowColor(!showColor)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
+                              Show Color
+                            </label>
+                            <label className="flex items-center text-sm cursor-pointer whitespace-nowrap" style={{ color: 'var(--text-3)' }}>
+                              <input type="checkbox" checked={showGrayscale} onChange={() => setShowGrayscale(!showGrayscale)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
+                              Show Grayscale
+                            </label>
+                            <label className="flex items-center text-sm cursor-pointer whitespace-nowrap" style={{ color: 'var(--text-3)' }}>
+                              <input type="checkbox" checked={showEnemy} onChange={() => setShowEnemy(!showEnemy)} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0 mr-2" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
+                              Show Enemy
+                            </label>
+                          </div>
+                          {baseFilteredParams.length > 0 && (
+                            <div className="flex flex-row gap-6 w-full">
+                              <div className="flex-1 min-w-0">
+                                <ColorRangeFilter colorParams={baseFilteredParams} hueRange={hueRange} onHueRangeChange={setHueRange} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <LumaRangeFilter colorParams={baseFilteredParams} lumaRange={lumaRange} onLumaRangeChange={setLumaRange} />
+                              </div>
+                            </div>
+                          )}
+                          {folders.length > 1 && (
+                            <div>
+                              <h4 className="text-xs font-medium mb-1" style={{ color: 'var(--text-3)' }}>Filter by Folder:</h4>
+                              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                {folders.map(folder => (
+                                  <label key={folder} className="flex items-center text-xs cursor-pointer" style={{ color: 'var(--text-3)' }} title="Alt + Click to solo select">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedFolders.has(folder)}
+                                      onClick={(e) => { if (e.altKey) { e.preventDefault(); handleFolderToggle(folder, true); } }}
+                                      onChange={(e) => { if (!(e.nativeEvent as MouseEvent).altKey) handleFolderToggle(folder); }}
+                                      className="w-3 h-3 rounded-none focus:ring-offset-0 focus:ring-0 mr-1"
+                                      style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}
+                                    />
+                                    {folder === '/' ? 'Root' : folder}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

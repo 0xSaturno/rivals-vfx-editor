@@ -68,7 +68,21 @@ export function GlobalControls({
       <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Hue Shift</h3>
-          <span className="font-mono text-lg" style={{ color: 'var(--text-3)' }}>{hueShiftValue}&deg;</span>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min="-180"
+              max="180"
+              value={hueShiftValue}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setHueShiftValue(Number.isNaN(val) ? 0 : Math.max(-180, Math.min(180, val)));
+              }}
+              className="w-16 px-1 py-0.5 text-center font-mono text-sm focus:outline-none border-2 rounded-none"
+              style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
+            />
+            <span className="text-sm opacity-60" style={{ color: 'var(--text-3)' }}>&deg;</span>
+          </div>
         </div>
         <div>
           <input id="hue-shift" type="range" min="-180" max="180" value={hueShiftValue}
@@ -116,7 +130,22 @@ export function GlobalControls({
       <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Brightness Multiplier</h3>
-          <span className="font-mono text-lg" style={{ color: 'var(--text-3)' }}>x{brightnessMultiplier.toFixed(2)}</span>
+          <div className="flex items-center gap-1">
+            <span className="text-sm opacity-60" style={{ color: 'var(--text-3)' }}>x</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={Number(brightnessMultiplier.toFixed(2))}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                setBrightnessMultiplier(Number.isNaN(val) ? 1.0 : Math.max(0, Math.min(100, val)));
+              }}
+              className="w-20 px-1 py-0.5 text-center font-mono text-sm focus:outline-none border-2 rounded-none"
+              style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
+            />
+          </div>
         </div>
         <div>
           {/* Mapping: 0-25% => 0x-1x, 25-100% => 1x-100x */}

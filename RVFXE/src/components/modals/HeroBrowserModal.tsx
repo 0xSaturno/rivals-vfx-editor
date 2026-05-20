@@ -8,7 +8,7 @@ const iconLoadedGlobal = new Set<string>();
 
 interface HeroBrowserModalProps {
   onClose: () => void;
-  onSelectHero: (heroId: string, heroName: string) => void;
+  onSelectHero: (heroId: string, heroName: string, koMode: boolean) => void;
   addDebugLog: (msg: string) => void;
 }
 
@@ -20,6 +20,8 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
   const [selectedHeroId, setSelectedHeroId] = useState<string | null>(null);
   const [loadingVfx, setLoadingVfx] = useState(false);
   const [iconDataUrls, setIconDataUrls] = useState<Record<string, string>>({ ...iconDataUrlCache });
+  const [loadingIcons, setLoadingIcons] = useState(false);
+  const [koMode, setKoMode] = useState(false);
 
   // Load hero roster on mount
   useEffect(() => {
@@ -59,6 +61,7 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
       const uncachedHeroes = heroes.filter(h => !iconLoadedGlobal.has(h.hero_id));
       if (uncachedHeroes.length === 0) return;
 
+      setLoadingIcons(true);
       try {
         addDebugLog(`Extracting ${uncachedHeroes.length} hero icons...`);
         await tauri.batchExtractHeroIcons(uncachedHeroes.map(h => h.hero_id));
@@ -80,6 +83,7 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
       });
 
       await Promise.all(fetchPromises);
+      setLoadingIcons(false);
     };
 
     loadIcons();
@@ -90,6 +94,7 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
     setError(null);
     setHeroes([]);
     setIconDataUrls({});
+    setLoadingIcons(false);
     // Clear global cache on explicit refresh
     Object.keys(iconDataUrlCache).forEach(k => delete iconDataUrlCache[k]);
     iconLoadedGlobal.clear();
@@ -116,18 +121,22 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
     if (!hero) return;
 
     setLoadingVfx(true);
-    addDebugLog(`Loading VFX materials for ${hero.display_name} (${hero.hero_id})...`);
-    console.debug('[HeroBrowser] Loading VFX for hero:', selectedHeroId);
+    if (koMode) {
+      addDebugLog(`Loading KO Prompt WBP for ${hero.display_name} (${hero.hero_id})...`);
+    } else {
+      addDebugLog(`Loading VFX materials for ${hero.display_name} (${hero.hero_id})...`);
+    }
+    console.debug('[HeroBrowser] Loading assets for hero:', selectedHeroId, 'koMode:', koMode);
 
     try {
-      onSelectHero(hero.hero_id, hero.display_name);
+      onSelectHero(hero.hero_id, hero.display_name, koMode);
     } catch (err) {
-      addDebugLog(`Failed to load hero VFX: ${err}`);
-      console.error('[HeroBrowser] VFX load error:', err);
+      addDebugLog(`Failed to load hero assets: ${err}`);
+      console.error('[HeroBrowser] Asset load error:', err);
     } finally {
       setLoadingVfx(false);
     }
-  }, [selectedHeroId, heroes, onSelectHero, addDebugLog]);
+  }, [selectedHeroId, heroes, onSelectHero, addDebugLog, koMode]);
 
   const filteredHeroes = heroes.filter(h => {
     const term = searchTerm.toLowerCase();
@@ -180,16 +189,46 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
         </div>
 
         {/* Search bar */}
-        <div className="p-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
-          <input
-            type="text"
-            placeholder="Search heroes by name or ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-2 rounded-none focus:outline-none focus:ring-2 text-sm"
-            style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)' }}
-            autoFocus
-          />
+        <div className="p-4 border-b flex flex-col gap-2" style={{ borderColor: 'var(--bg-2)' }}>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <input
+              type="text"
+              placeholder="Search heroes by name or ID..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="flex-1 w-full px-4 py-2 rounded-none focus:outline-none focus:ring-2 text-sm"
+              style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--text-2)' }}
+              autoFocus
+            />
+            <div className="flex rounded-none p-1 gap-1" style={{ backgroundColor: 'var(--bg-1)' }}>
+              <button
+                onClick={() => setKoMode(false)}
+                className="px-4 py-1.5 text-xs font-semibold rounded-none transition-all duration-200"
+                style={{
+                  backgroundColor: !koMode ? 'var(--accent-main)' : 'transparent',
+                  color: !koMode ? 'var(--bg-4)' : 'var(--text-3)',
+                }}
+              >
+                VFX Materials
+              </button>
+              <button
+                onClick={() => setKoMode(true)}
+                className="px-4 py-1.5 text-xs font-semibold rounded-none transition-all duration-200"
+                style={{
+                  backgroundColor: koMode ? 'var(--accent-main)' : 'transparent',
+                  color: koMode ? 'var(--bg-4)' : 'var(--text-3)',
+                }}
+              >
+                KO Prompt (WBP)
+              </button>
+            </div>
+          </div>
+          {loadingIcons && (
+            <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--accent-main)' }}>
+              <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" strokeDasharray="31.4 31.4" strokeDashoffset="10" /></svg>
+              <span>Extracting and loading hero icons from game assets...</span>
+            </div>
+          )}
         </div>
 
         {/* Hero Grid */}
@@ -263,12 +302,18 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
                             className="w-full h-full object-cover relative z-10"
                           />
                         </>
-                      ) : null}
-                      <span
-                        className={`text-xl font-bold text-white/80 ${iconDataUrl ? 'hidden' : ''}`}
-                      >
-                        {getInitials(hero.display_name)}
-                      </span>
+                      ) : (
+                        <>
+                          <span className="text-xl font-bold text-white/80">
+                            {getInitials(hero.display_name)}
+                          </span>
+                          {loadingIcons && !iconLoadedGlobal.has(hero.hero_id) && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-20">
+                              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ color: 'var(--accent-main)' }}><circle cx="12" cy="12" r="10" strokeDasharray="31.4 31.4" strokeDashoffset="10" /></svg>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
 
                     {/* Name */}
@@ -298,7 +343,7 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
                 <span className="ml-1 opacity-60">({selectedHeroId})</span>
               </span>
             ) : (
-              <span>Click a hero to select, double-click to load VFX</span>
+              <span>Click a hero to select, double-click to load {koMode ? 'KO Prompt' : 'VFX'}</span>
             )}
           </div>
           <div className="flex gap-2">
@@ -315,7 +360,7 @@ export function HeroBrowserModal({ onClose, onSelectHero, addDebugLog }: HeroBro
               className="px-6 py-2 text-sm font-medium rounded-none disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }}
             >
-              {loadingVfx ? 'Loading...' : 'Load VFX Materials'}
+              {loadingVfx ? 'Loading...' : koMode ? 'Load KO Prompt' : 'Load VFX Materials'}
             </button>
           </div>
         </div>

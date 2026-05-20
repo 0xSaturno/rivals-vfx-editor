@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import type { ColorParam, RGBA, SortConfig } from '@/types';
 import { rgbaToDisplayHex, hexToRgba, rgbToHsl, hslToRgb, applyColorToParam } from '@/utils/color';
 import { EditableHexInput } from '@/components/ui';
@@ -19,10 +20,54 @@ export function ParameterTable({
   filteredParams, selectedParams, hueShiftValue, ignoreGrayscale, preserveIntensity,
   sortConfig, onSelectionChange, onSelectAll, onParamChange, onRequestSort,
 }: ParameterTableProps) {
+  const [dragActive, setDragActive] = useState(false);
+  const [dragMode, setDragMode] = useState<'select' | 'deselect' | null>(null);
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      setDragActive(false);
+      setDragMode(null);
+    };
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  const handleRowMouseDown = (e: React.MouseEvent, id: string) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName === 'INPUT' ||
+      target.tagName === 'BUTTON' ||
+      target.closest('.editable-hex-input') ||
+      target.closest('a')
+    ) {
+      return;
+    }
+    // Prevent browser text highlight while dragging
+    e.preventDefault();
+
+    const isSelected = selectedParams.has(id);
+    const mode = isSelected ? 'deselect' : 'select';
+    setDragActive(true);
+    setDragMode(mode);
+    onSelectionChange(id);
+  };
+
+  const handleRowMouseEnter = (id: string) => {
+    if (!dragActive || !dragMode) return;
+    const isSelected = selectedParams.has(id);
+    if (dragMode === 'select' && !isSelected) {
+      onSelectionChange(id);
+    } else if (dragMode === 'deselect' && isSelected) {
+      onSelectionChange(id);
+    }
+  };
+
   return (
     <div className="overflow-x-auto flex-1" style={{ maxHeight: 'calc(100vh - 35rem)', overflowY: 'auto' }}>
       <table className="w-full text-sm text-left">
-        <thead style={{ color: 'var(--text-4)' }}>
+        <thead style={{ color: 'var(--text-4)', position: 'sticky', top: 0, backgroundColor: 'var(--bg-4)', zIndex: 10 }}>
           <tr style={{ borderBottom: '2px solid var(--bg-2)' }}>
             <th scope="col" className="p-4">
               <input type="checkbox" onChange={onSelectAll} checked={filteredParams.length > 0 && selectedParams.size === filteredParams.length} className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }} />
@@ -76,7 +121,13 @@ export function ParameterTable({
             const displayHexColor = rgbaToDisplayHex(displayRgba.R, displayRgba.G, displayRgba.B);
 
             return (
-              <tr key={p.id} className="hover:bg-opacity-50" style={{ borderBottom: '1px solid var(--bg-2)', backgroundColor: isPreviewing ? 'rgba(204, 255, 255, 0.05)' : 'transparent' }}>
+              <tr
+                key={p.id}
+                onMouseDown={(e) => handleRowMouseDown(e, p.id)}
+                onMouseEnter={() => handleRowMouseEnter(p.id)}
+                className="hover:bg-opacity-50 cursor-pointer"
+                style={{ borderBottom: '1px solid var(--bg-2)', backgroundColor: isPreviewing ? 'rgba(204, 255, 255, 0.05)' : 'transparent' }}
+              >
                 <td className="w-4 p-4">
                   <input
                     type="checkbox"

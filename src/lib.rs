@@ -2245,18 +2245,21 @@ async fn extract_hero_vfx(
     app: AppHandle,
     state: State<'_, AppState>,
     hero_id: String,
+    ko_mode: Option<bool>,
 ) -> Result<HeroVfxResult, String> {
-    eprintln!("[DEBUG] extract_hero_vfx called for hero_id={}", hero_id);
+    let is_ko = ko_mode.unwrap_or(false);
+    eprintln!("[DEBUG] extract_hero_vfx called for hero_id={}, ko_mode={}", hero_id, is_ko);
 
-    let extract_dir = get_hero_cache_dir().join("vfx").join("extracted").join(&hero_id);
-    let json_dir = get_hero_cache_dir().join("vfx").join("json").join(&hero_id);
+    let sub_dir = if is_ko { "ko" } else { "vfx" };
+    let extract_dir = get_hero_cache_dir().join(sub_dir).join("extracted").join(&hero_id);
+    let json_dir = get_hero_cache_dir().join(sub_dir).join("json").join(&hero_id);
 
     // Check if already extracted
     let existing_uassets = if extract_dir.exists() { find_files_recursive(&extract_dir, ".uasset") } else { vec![] };
     let has_uassets = !existing_uassets.is_empty();
 
     if has_uassets {
-        eprintln!("[DEBUG] Hero VFX UAssets already extracted, skipping extraction but re-converting to JSON...");
+        eprintln!("[DEBUG] Hero assets already extracted, skipping extraction but re-converting to JSON...");
     } else {
         // Step 1: Extract VFX materials via CLI
         fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
@@ -2268,7 +2271,11 @@ async fn extract_hero_vfx(
                 progress_type: Some("progress".to_string()),
                 current: 0,
                 total: 0,
-                file_name: format!("Extracting VFX for hero {}...", hero_id),
+                file_name: if is_ko {
+                    format!("Extracting KO Prompt for hero {}...", hero_id)
+                } else {
+                    format!("Extracting VFX for hero {}...", hero_id)
+                },
                 cached: false,
                 error: None,
             },
@@ -2281,20 +2288,24 @@ async fn extract_hero_vfx(
         let paks_path = paks_path.ok_or_else(|| "Game Paks path not set. Please set it in Settings.".to_string())?;
         let tool_path = get_uasset_tool_path(&app);
 
-        // Filter patterns for hero VFX materials
-        let filter_materials = format!("VFX/Materials/Characters/{}/Materials", hero_id);
-        let filter_master = format!("VFX/Materials/Characters/{}/MasterMaterials", hero_id);
+        let mut cli_args = vec![
+            "extract_iostore_legacy".to_string(),
+            paks_path.clone(),
+            extract_dir.to_string_lossy().to_string(),
+            "--filter".to_string(),
+        ];
+        if is_ko {
+            cli_args.push(format!("Marvel/UI/Blueprints/Battle/Custom/{}", hero_id));
+        } else {
+            cli_args.push(format!("VFX/Materials/Characters/{}/Materials", hero_id));
+            cli_args.push(format!("VFX/Materials/Characters/{}/MasterMaterials", hero_id));
+        }
+
+        let cli_args_refs: Vec<&str> = cli_args.iter().map(|s| s.as_str()).collect();
 
         let (_stdout, _stderr) = run_uasset_tool_cli(
             &tool_path,
-            &[
-                "extract_iostore_legacy",
-                &paks_path,
-                &extract_dir.to_string_lossy(),
-                "--filter",
-                &filter_materials,
-                &filter_master,
-            ],
+            &cli_args_refs,
         )
         .await?;
     }
@@ -2302,7 +2313,7 @@ async fn extract_hero_vfx(
     // Step 2: Convert all extracted .uasset to JSON (this ensures we always have the original colors)
     let uasset_files = find_files_recursive(&extract_dir, ".uasset");
     if uasset_files.is_empty() {
-        return Err(format!("No VFX materials found for hero {}", hero_id));
+        return Err(format!("No assets found for hero {}", hero_id));
     }
 
     fs::create_dir_all(&json_dir).map_err(|e| e.to_string())?;
