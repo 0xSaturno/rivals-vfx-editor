@@ -28,9 +28,15 @@ export function ParameterTable({
       setDragActive(false);
       setDragMode(null);
     };
+    const handleBlur = () => {
+      setDragActive(false);
+      setDragMode(null);
+    };
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, []);
 
@@ -40,7 +46,8 @@ export function ParameterTable({
       target.tagName === 'INPUT' ||
       target.tagName === 'BUTTON' ||
       target.closest('.editable-hex-input') ||
-      target.closest('a')
+      target.closest('a') ||
+      target.closest('label')
     ) {
       return;
     }
@@ -54,7 +61,12 @@ export function ParameterTable({
     onSelectionChange(id);
   };
 
-  const handleRowMouseEnter = (id: string) => {
+  const handleRowMouseEnter = (e: React.MouseEvent, id: string) => {
+    if ((e.buttons & 1) !== 1) {
+      setDragActive(false);
+      setDragMode(null);
+      return;
+    }
     if (!dragActive || !dragMode) return;
     const isSelected = selectedParams.has(id);
     if (dragMode === 'select' && !isSelected) {
@@ -65,7 +77,7 @@ export function ParameterTable({
   };
 
   return (
-    <div className="overflow-x-auto flex-1" style={{ maxHeight: 'calc(100vh - 31rem)', overflowY: 'auto' }}>
+    <div className="overflow-x-auto flex-1" style={{ maxHeight: 'calc(100vh - 35rem)', overflowY: 'auto' }}>
       <table className="w-full text-sm text-left">
         <thead style={{ color: 'var(--text-4)', position: 'sticky', top: 0, backgroundColor: 'var(--bg-4)', zIndex: 10 }}>
           <tr style={{ borderBottom: '2px solid var(--bg-2)' }}>
@@ -124,18 +136,20 @@ export function ParameterTable({
               <tr
                 key={p.id}
                 onMouseDown={(e) => handleRowMouseDown(e, p.id)}
-                onMouseEnter={() => handleRowMouseEnter(p.id)}
+                onMouseEnter={(e) => handleRowMouseEnter(e, p.id)}
                 className="hover:bg-opacity-50 cursor-pointer"
                 style={{ borderBottom: '1px solid var(--bg-2)', backgroundColor: isPreviewing ? 'rgba(204, 255, 255, 0.05)' : 'transparent' }}
               >
-                <td className="w-4 p-4">
-                  <input
-                    type="checkbox"
-                    checked={selectedParams.has(p.id)}
-                    onChange={() => onSelectionChange(p.id)}
-                    className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0"
-                    style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}
-                  />
+                <td className="p-0">
+                  <label className="flex items-center justify-center cursor-pointer w-full h-full">
+                    <input
+                      type="checkbox"
+                      checked={selectedParams.has(p.id)}
+                      onChange={() => onSelectionChange(p.id)}
+                      className="w-4 h-4 rounded-none focus:ring-offset-0 focus:ring-0"
+                      style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-1)', color: 'var(--accent-main)' }}
+                    />
+                  </label>
                 </td>
                 <td className="px-6 py-4 font-medium whitespace-nowrap" style={{ color: 'var(--text-2)' }}>{p.relativePath.replace(/\.json$/i, '')}</td>
                 <td className="px-6 py-4">{p.paramName}</td>

@@ -19,6 +19,6 @@ RVFXE/vite.config.*
 RVFXE/package*.json
 RVFXE/*.js
 RVFXE/*.ts
-RVFXE/*.css
+RVFXE/css/
 RVFXE/dist/
 RVFXE/node_modules/

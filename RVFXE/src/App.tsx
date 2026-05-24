@@ -29,8 +29,8 @@ import '../css/fonts.css';
 import '../css/style.css';
 
 const DEFAULT_FILTER_DICTIONARY: FilterDictionary = {
-  include_keywords: ['color', 'tint', 'Enemy', 'Emiss', 'Diff'],
-  exclude_keywords: ['Offset', 'uv', 'ColorMaskChannel', 'MaskColor_Enemy'],
+  include_keywords: ['color', 'tint', 'Enemy', 'Emiss', 'Diff', 'XKTex3_Col'],
+  exclude_keywords: ['Offset', 'uv', 'ColorMaskChannel', 'MaskColor_Enemy', 'MI_Master'],
   color_property_names: [
     'ColorAndOpacity', 'SpecifiedColor', 'BaseColor', 'HighlightColor',
     'FontTopColor', 'FontButtomColor', 'VectorParameter', 'ShadowColor',
@@ -383,12 +383,28 @@ export function App() {
 
   const applyShuffle = useCallback(() => {
     if (selectedParams.size === 0) { alert('No parameters selected.'); return; }
-    const selectedFiles = [...new Set(colorParams.filter(p => selectedParams.has(p.id)).map(p => p.fileName))];
-    const fileToColorMap: Record<string, string> = {};
-    selectedFiles.forEach((fileName, index) => { fileToColorMap[fileName] = shuffleColors[index % shuffleColors.length]; });
+    
+    // Group selected parameters by their parameter name (paramName)
+    const paramsByName: Record<string, ColorParam[]> = {};
+    colorParams.filter(p => selectedParams.has(p.id)).forEach(p => {
+      if (!paramsByName[p.paramName]) {
+        paramsByName[p.paramName] = [];
+      }
+      paramsByName[p.paramName].push(p);
+    });
+
+    const paramToColorMap: Record<string, string> = {};
+    Object.entries(paramsByName).forEach(([, params]) => {
+      // Randomize the starting index of shuffleColors per parameter name
+      const startIndex = Math.floor(Math.random() * shuffleColors.length);
+      params.forEach((param, index) => {
+        paramToColorMap[param.id] = shuffleColors[(startIndex + index) % shuffleColors.length];
+      });
+    });
+
     const newParams = colorParams.map(p => {
       if (selectedParams.has(p.id)) {
-        const newColorHex = fileToColorMap[p.fileName];
+        const newColorHex = paramToColorMap[p.id];
         if (newColorHex) return { ...p, rgba: applyColorToParam(p.rgba, hexToRgba(newColorHex), { preserveIntensity, ignoreGrayscale }) };
       }
       return p;
@@ -954,8 +970,8 @@ export function App() {
 
         <div className="my-8">
           {colorParams.length > 0 ? (
-            <div className="grid grid-cols-1 lg:grid-cols-10 gap-8">
-              <div className="lg:col-span-3">
+            <div className="flex flex-col lg:flex-row gap-8">
+              <div className="lg:flex-shrink-0 global-controls-wrapper w-full">
                 <StyledPanel title="Global Controls">
                   <GlobalControls
                     masterColor={masterColor} setMasterColor={setMasterColor}
@@ -971,9 +987,9 @@ export function App() {
                   />
                 </StyledPanel>
               </div>
-              <div className="lg:col-span-7">
+              <div className="flex-grow lg:flex-1 min-w-0">
                 <StyledPanel title="Parameters">
-                  <div className="p-4 flex flex-col gap-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
+                  <div className="px-4 pb-4 pt-0 flex flex-col gap-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
                     <div className="flex justify-between items-start w-full gap-4">
                       <div className="hidden"></div>
                       <div className="flex flex-col gap-4 w-full">

@@ -40,12 +40,14 @@ impl Default for FilterDictionary {
                 "Enemy".to_string(),
                 "Emiss".to_string(),
                 "Diff".to_string(),
+                "XKTex3_Col".to_string(),
             ],
             exclude_keywords: vec![
                 "Offset".to_string(),
                 "uv".to_string(),
                 "ColorMaskChannel".to_string(),
                 "MaskColor_Enemy".to_string(),
+                "MI_Master".to_string(),
             ],
             color_property_names: vec![
                 "ColorAndOpacity".to_string(),
@@ -2297,8 +2299,7 @@ async fn extract_hero_vfx(
         if is_ko {
             cli_args.push(format!("Marvel/UI/Blueprints/Battle/Custom/{}", hero_id));
         } else {
-            cli_args.push(format!("VFX/Materials/Characters/{}/Materials", hero_id));
-            cli_args.push(format!("VFX/Materials/Characters/{}/MasterMaterials", hero_id));
+            cli_args.push(format!("VFX/Materials/Characters/{}/", hero_id));
         }
 
         let cli_args_refs: Vec<&str> = cli_args.iter().map(|s| s.as_str()).collect();

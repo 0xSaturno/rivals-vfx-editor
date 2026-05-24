@@ -4,13 +4,15 @@
     "tint",
     "Enemy",
     "Emiss",
-    "Diff"
+    "Diff",
+    "XKTex3_Col"
   ],
   "exclude_keywords": [
     "Offset",
     "uv",
     "ColorMaskChannel",
-    "MaskColor_Enemy"
+    "MaskColor_Enemy",
+    "MI_Master"
   ],
   "color_property_names": [
     "ColorAndOpacity",

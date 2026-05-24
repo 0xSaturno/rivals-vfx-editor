@@ -1,19 +1,28 @@
 /* Theme colors */
 :root {
     --font-main: 'DM Mono', monospace;
-    --bg-4: #1e1f22; /* main background color */
-    --bg-3: #2b2d31; /* for cards and panels */
-    --bg-2: #383a40; /* borders, inputs, stuff like that */
-    --bg-1: #40434b; /* hover states */
-    
-    --text-1: #f2f2f2; /* brightest text */
-    --text-2: #dbdee1; /* titles, important text */
-    --text-3: #b8b9bf; /* normal body text */
-    --text-4: #9499a0; /* muted text */
+    --bg-4: #1e1f22;
+    /* main background color */
+    --bg-3: #2b2d31;
+    /* for cards and panels */
+    --bg-2: #383a40;
+    /* borders, inputs, stuff like that */
+    --bg-1: #40434b;
+    /* hover states */
+
+    --text-1: #f2f2f2;
+    /* brightest text */
+    --text-2: #dbdee1;
+    /* titles, important text */
+    --text-3: #b8b9bf;
+    /* normal body text */
+    --text-4: #9499a0;
+    /* muted text */
 
     --accent-main: #ccffff;
     --accent-green: #248046;
 }
+
 body {
     font-family: var(--font-main);
     background-color: var(--bg-4);
@@ -31,9 +40,11 @@ input[type="range"] {
     opacity: 0.7;
     transition: opacity .2s;
 }
+
 input[type="range"]:hover {
     opacity: 1;
 }
+
 input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
@@ -43,6 +54,7 @@ input[type="range"]::-webkit-slider-thumb {
     cursor: pointer;
     border: 2px solid var(--bg-4);
 }
+
 input[type="range"]::-moz-range-thumb {
     width: 16px;
     height: 16px;
@@ -55,17 +67,21 @@ input[type="range"]::-moz-range-thumb {
 ::-webkit-scrollbar {
     width: 12px;
 }
+
 ::-webkit-scrollbar-track {
     background: var(--bg-4);
 }
+
 ::-webkit-scrollbar-thumb {
     background-color: var(--bg-1);
     border-radius: 20px;
     border: 3px solid var(--bg-4);
 }
+
 ::-webkit-scrollbar-thumb:hover {
     background-color: var(--accent-main);
 }
+
 html {
     scrollbar-width: thin;
     scrollbar-color: var(--bg-1) var(--bg-4);
@@ -74,8 +90,10 @@ html {
 /* ===== Particle Animation Styles ===== */
 .particle-header {
     position: relative;
-    overflow: hidden; /* hide the bits that go outside the box */
-    background-color: #000; /* black background for the stars */
+    overflow: hidden;
+    /* hide the bits that go outside the box */
+    background-color: #000;
+    /* black background for the stars */
 }
 
 .particles {
@@ -99,6 +117,7 @@ html {
         transform: translateY(0) translateX(0);
         opacity: 1;
     }
+
     100% {
         transform: translateY(-150px) translateX(20px);
         opacity: 0;
@@ -107,5 +126,37 @@ html {
 
 /* Apply the custom font to the main title */
 .particle-header h1 {
-    font-family: 'Asciid', var(--font-main); /* Use Asciid, with DM Mono as a fallback */
+    font-family: 'Asciid', var(--font-main);
+    /* Use Asciid, with DM Mono as a fallback */
+}
+
+/* Disable text selection in header, global controls panels, and hero browser (except inputs) */
+.particle-header,
+.global-controls,
+.hero-browser-modal {
+    user-select: none;
+    -webkit-user-select: none;
+    /* Safari */
+    -moz-user-select: none;
+    /* Firefox */
+    -ms-user-select: none;
+    /* IE10+ */
+}
+
+.particle-header input,
+.particle-header textarea,
+.global-controls input,
+.global-controls textarea,
+.hero-browser-modal input,
+.hero-browser-modal textarea {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
+/* Sizing rules for Global Controls - tweak as needed */
+.global-controls-wrapper {
+    min-width: 300px;
+    max-width: 400px;
 }

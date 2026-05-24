@@ -37,7 +37,7 @@ export function GlobalControls({
   const isDisabled = selectedCount === 0;
 
   return (
-    <div className="flex flex-col space-y-6">
+    <div className="flex flex-col space-y-6 global-controls">
       {/* Single Color */}
       <div className="space-y-2">
         <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Single Color</h3>
@@ -149,7 +149,7 @@ export function GlobalControls({
         </div>
         <div>
           {/* Mapping: 0-25% => 0x-1x, 25-100% => 1x-100x */}
-          <input type="range" min="0" max="100" step="0.1" 
+          <input type="range" min="0" max="100" step="0.1"
             value={brightnessMultiplier <= 1 ? brightnessMultiplier * 25 : 25 + (brightnessMultiplier - 1) * (75 / 99)}
             onChange={(e) => {
               const s = parseFloat(e.target.value);
@@ -166,7 +166,7 @@ export function GlobalControls({
 
       {/* Toggles */}
       <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
-        <ToggleSwitch label="Preserve Intensity (Recommended)" enabled={preserveIntensity} setEnabled={setPreserveIntensity} />
+        <ToggleSwitch label="Preserve Intensity" enabled={preserveIntensity} setEnabled={setPreserveIntensity} />
         <ToggleSwitch label="Ignore Grayscale (R=G=B)" enabled={ignoreGrayscale} setEnabled={setIgnoreGrayscale} />
       </div>
     </div>
