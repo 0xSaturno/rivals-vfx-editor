@@ -16,11 +16,14 @@ interface GlobalControlsProps {
   setIgnoreGrayscale: (v: boolean) => void;
   brightnessMultiplier: number;
   setBrightnessMultiplier: (v: number) => void;
+  opacityValue: number;
+  setOpacityValue: (v: number) => void;
   selectedCount: number;
   onApplyMasterColor: () => void;
   onApplyHueShift: () => void;
   onApplyShuffle: () => void;
   onApplyBrightnessMultiplier: () => void;
+  onApplyOpacity: () => void;
 }
 
 export function GlobalControls({
@@ -31,8 +34,9 @@ export function GlobalControls({
   preserveIntensity, setPreserveIntensity,
   ignoreGrayscale, setIgnoreGrayscale,
   brightnessMultiplier, setBrightnessMultiplier,
+  opacityValue, setOpacityValue,
   selectedCount,
-  onApplyMasterColor, onApplyHueShift, onApplyShuffle, onApplyBrightnessMultiplier,
+  onApplyMasterColor, onApplyHueShift, onApplyShuffle, onApplyBrightnessMultiplier, onApplyOpacity,
 }: GlobalControlsProps) {
   const isDisabled = selectedCount === 0;
 
@@ -161,6 +165,38 @@ export function GlobalControls({
         </div>
         <button onClick={onApplyBrightnessMultiplier} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={isDisabled}>
           Apply Brightness
+        </button>
+      </div>
+
+      {/* Opacity */}
+      <div className="space-y-3 pt-4 border-t" style={{ borderColor: 'var(--bg-2)' }}>
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-medium" style={{ color: 'var(--text-2)' }}>Opacity</h3>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min="0"
+              max="1"
+              step="0.01"
+              value={Number(opacityValue.toFixed(2))}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                setOpacityValue(Number.isNaN(val) ? 1.0 : Math.max(0, Math.min(1, val)));
+              }}
+              className="w-20 px-1 py-0.5 text-center font-mono text-sm focus:outline-none border-2 rounded-none"
+              style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
+            />
+          </div>
+        </div>
+        <div>
+          <input type="range" min="0" max="1" step="0.01"
+            value={opacityValue}
+            onChange={(e) => setOpacityValue(parseFloat(e.target.value))}
+            onDoubleClick={() => setOpacityValue(1.0)}
+            className="w-full h-2 rounded-none appearance-none cursor-pointer" />
+        </div>
+        <button onClick={onApplyOpacity} className="w-full px-4 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={isDisabled}>
+          Apply Opacity
         </button>
       </div>
 

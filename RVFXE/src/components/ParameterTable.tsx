@@ -77,7 +77,7 @@ export function ParameterTable({
   };
 
   return (
-    <div className="overflow-x-auto flex-1" style={{ maxHeight: 'calc(100vh - 35rem)', overflowY: 'auto' }}>
+    <div className="overflow-x-auto flex-1 min-h-0" style={{ overflowY: 'auto' }}>
       <table className="w-full text-sm text-left">
         <thead style={{ color: 'var(--text-4)', position: 'sticky', top: 0, backgroundColor: 'var(--bg-4)', zIndex: 10 }}>
           <tr style={{ borderBottom: '2px solid var(--bg-2)' }}>

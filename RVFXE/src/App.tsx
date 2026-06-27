@@ -42,7 +42,7 @@ export function App() {
   // === CORE STATE ===
   const history = useHistory();
   const debug = useDebugLog();
-  const { colorParams, recordHistory, handleUndo, handleRedo, historyIndex, historyLength, resetHistory, setInitialHistory } = history;
+  const { colorParams, recordHistory, handleUndo, handleRedo, historyIndex, historyLength, resetHistory, setInitialHistory, getOriginalParams } = history;
 
   const selectAllRef = useRef<() => void>();
   const keyboard = useKeyboard(handleUndo, handleRedo, () => selectAllRef.current?.());
@@ -67,6 +67,7 @@ export function App() {
   const [useFiveColors, setUseFiveColors] = useState(false);
   const [shuffleColors, setShuffleColors] = useState(['#ccffff', '#88eeee', '#66dddd']);
   const [brightnessMultiplier, setBrightnessMultiplier] = useState(1.0);
+  const [opacityValue, setOpacityValue] = useState(1.0);
 
   // === FOLDER/SORT STATE ===
   const [folders, setFolders] = useState<string[]>([]);
@@ -431,6 +432,49 @@ export function App() {
     recordHistory(newParams);
     setBrightnessMultiplier(1.0);
   }, [colorParams, selectedParams, brightnessMultiplier, recordHistory]);
+
+  const applyOpacity = useCallback(() => {
+    if (selectedParams.size === 0) { alert('No parameters selected.'); return; }
+    const newParams = colorParams.map(p => {
+      if (selectedParams.has(p.id)) {
+        return {
+          ...p,
+          rgba: {
+            ...p.rgba,
+            A: Math.min(1.0, Math.max(0.0, opacityValue)),
+          }
+        };
+      }
+      return p;
+    });
+    recordHistory(newParams);
+    setOpacityValue(1.0);
+  }, [colorParams, selectedParams, opacityValue, recordHistory]);
+
+  const handleResetSelected = useCallback(() => {
+    if (selectedParams.size === 0) { alert('No parameters selected.'); return; }
+    const originalParams = getOriginalParams();
+    if (originalParams.length === 0) return;
+    
+    let updatedCount = 0;
+    const newParams = colorParams.map(p => {
+      if (selectedParams.has(p.id)) {
+        const originalP = originalParams.find(op => op.id === p.id);
+        if (originalP && (originalP.rgba.R !== p.rgba.R || originalP.rgba.G !== p.rgba.G || originalP.rgba.B !== p.rgba.B || originalP.rgba.A !== p.rgba.A)) {
+          updatedCount++;
+          return { ...p, rgba: { ...originalP.rgba } };
+        }
+      }
+      return p;
+    });
+    
+    if (updatedCount > 0) {
+      recordHistory(newParams);
+      debug.addLog(`Reset ${updatedCount} parameters to original values`);
+    } else {
+      debug.addLog('Selected parameters are already at original values');
+    }
+  }, [colorParams, selectedParams, getOriginalParams, recordHistory, debug.addLog]);
 
   // === SELECTION ===
   const baseFilteredParams = useMemo(() => {
@@ -849,6 +893,7 @@ export function App() {
     setPreserveIntensity(true);
     setIgnoreGrayscale(true);
     setShowGrayscale(true);
+    setOpacityValue(1.0);
     setUassetSourceMap({});
   }, [resetHistory]);
 
@@ -946,10 +991,10 @@ export function App() {
 
   // =================== RENDER ===================
   return (
-    <div style={{ backgroundColor: 'var(--bg-4)', color: 'var(--text-3)' }} className="min-h-screen p-6">
+    <div style={{ backgroundColor: 'var(--bg-4)', color: 'var(--text-3)' }} className="h-screen p-6 flex flex-col overflow-hidden">
       <DebugConsole logs={debug.logs} showDebug={debug.showDebug} setShowDebug={debug.setShowDebug} clearLogs={debug.clearLogs} />
 
-      <div className="w-full">
+      <div className="w-full flex-1 flex flex-col min-h-0">
         <Header settings={settings} onOpenSettings={handleOpenSettings} onOpenFilterSettings={() => setShowFilterSettings(true)} onReset={handleReset} addDebugLog={debug.addLog} />
 
         {/* Usmap Status Banner */}
@@ -968,9 +1013,9 @@ export function App() {
           </div>
         )}
 
-        <div className="my-8">
+        <div className="mt-8 mb-0 flex-1 flex flex-col min-h-0">
           {colorParams.length > 0 ? (
-            <div className="flex flex-col lg:flex-row gap-8">
+            <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0">
               <div className="lg:flex-shrink-0 global-controls-wrapper w-full">
                 <StyledPanel title="Global Controls">
                   <GlobalControls
@@ -982,14 +1027,15 @@ export function App() {
                     preserveIntensity={preserveIntensity} setPreserveIntensity={setPreserveIntensity}
                     ignoreGrayscale={ignoreGrayscale} setIgnoreGrayscale={setIgnoreGrayscale}
                     brightnessMultiplier={brightnessMultiplier} setBrightnessMultiplier={setBrightnessMultiplier}
+                    opacityValue={opacityValue} setOpacityValue={setOpacityValue}
                     selectedCount={selectedParams.size}
-                    onApplyMasterColor={applyMasterColor} onApplyHueShift={applyHueShift} onApplyShuffle={applyShuffle} onApplyBrightnessMultiplier={applyBrightnessMultiplier}
+                    onApplyMasterColor={applyMasterColor} onApplyHueShift={applyHueShift} onApplyShuffle={applyShuffle} onApplyBrightnessMultiplier={applyBrightnessMultiplier} onApplyOpacity={applyOpacity}
                   />
                 </StyledPanel>
               </div>
-              <div className="flex-grow lg:flex-1 min-w-0">
-                <StyledPanel title="Parameters">
-                  <div className="px-4 pb-4 pt-0 flex flex-col gap-4 border-b" style={{ borderColor: 'var(--bg-2)' }}>
+              <div className="flex-grow lg:flex-1 min-w-0 flex flex-col min-h-0">
+                <StyledPanel title="Parameters" className="flex flex-col flex-1 min-h-0" bodyClassName="flex flex-col flex-1 min-h-0 p-6 pt-8 pb-4">
+                  <div className="px-4 pb-4 pt-0 flex flex-col gap-4 border-b flex-shrink-0" style={{ borderColor: 'var(--bg-2)' }}>
                     <div className="flex justify-between items-start w-full gap-4">
                       <div className="hidden"></div>
                       <div className="flex flex-col gap-4 w-full">
@@ -1013,6 +1059,10 @@ export function App() {
                             {saveStatus && (
                               <span className="text-xs whitespace-nowrap mr-2" style={{ color: 'var(--text-4)' }}>{saveStatus}</span>
                             )}
+                            <button onClick={handleResetSelected} title="Reset Selected to Original" className="flex items-center justify-center px-3 py-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }} disabled={selectedParams.size === 0 || colorParams.length === 0}>
+                              <svg className="mr-1.5" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                              <span className="text-sm">Reset</span>
+                            </button>
                             <button onClick={handleUndo} title="Undo (Ctrl+Z)" className="flex items-center justify-center p-2 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-1)' }} disabled={historyIndex === 0}>
                               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
                             </button>

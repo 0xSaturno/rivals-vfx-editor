@@ -4,9 +4,10 @@ interface StyledPanelProps extends HTMLAttributes<HTMLDivElement> {
   title: string;
   children: ReactNode;
   className?: string;
+  bodyClassName?: string;
 }
 
-export function StyledPanel({ title, children, className = '', ...props }: StyledPanelProps) {
+export function StyledPanel({ title, children, className = '', bodyClassName = 'p-6 pt-8', ...props }: StyledPanelProps) {
   return (
     <div className={`relative group ${className}`} style={{ backgroundColor: 'var(--bg-3)' }} {...props}>
       <div className="absolute inset-0 border-2 pointer-events-none transition-colors" style={{ borderColor: 'var(--bg-2)' }}></div>
@@ -14,7 +15,7 @@ export function StyledPanel({ title, children, className = '', ...props }: Style
       <h2 className="absolute -top-3 left-4 px-2 text-xl font-medium" style={{ backgroundColor: 'var(--bg-3)', color: 'var(--text-2)' }}>
         <span className="transition-colors group-hover:text-[--accent-main]">{title}</span>
       </h2>
-      <div className="p-6 pt-8">
+      <div className={bodyClassName}>
         {children}
       </div>
     </div>

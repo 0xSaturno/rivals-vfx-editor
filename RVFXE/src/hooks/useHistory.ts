@@ -10,6 +10,7 @@ export interface HistoryAPI {
   handleRedo: () => void;
   resetHistory: () => void;
   setInitialHistory: (params: ColorParam[]) => void;
+  getOriginalParams: () => ColorParam[];
 }
 
 export function useHistory(): HistoryAPI {
@@ -56,6 +57,10 @@ export function useHistory(): HistoryAPI {
     setHistoryIndex(0);
   }, []);
 
+  const getOriginalParams = useCallback(() => {
+    return history[0] || [];
+  }, [history]);
+
   return {
     colorParams,
     historyIndex,
@@ -65,5 +70,6 @@ export function useHistory(): HistoryAPI {
     handleRedo,
     resetHistory,
     setInitialHistory,
+    getOriginalParams,
   };
 }
