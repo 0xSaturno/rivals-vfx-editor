@@ -37,6 +37,7 @@ export interface AppSettings {
   autoClearCache: boolean;
   uiScale: number;
   filterDictionary?: FilterDictionary;
+  isHeaderMinimized?: boolean;
 }
 
 // ===== Cache Info =====

@@ -8,6 +8,7 @@ interface HeaderProps {
   onOpenFilterSettings: () => void;
   onReset: () => void;
   addDebugLog: (msg: string) => void;
+  onToggleMinimize: () => void;
 }
 
 export function Header({
@@ -16,7 +17,9 @@ export function Header({
   onOpenFilterSettings,
   onReset,
   addDebugLog,
+  onToggleMinimize,
 }: HeaderProps) {
+  const isMinimized = settings.isHeaderMinimized ?? false;
   const resetButtonRef = useRef<HTMLButtonElement>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -52,7 +55,20 @@ export function Header({
   };
 
   return (
-    <div className="relative group p-4 border-2 particle-header" style={{ borderColor: 'var(--bg-2)' }}>
+    <div className={`relative group border-2 particle-header ${isMinimized ? 'p-2' : 'p-4'}`} style={{ borderColor: 'var(--bg-2)' }}>
+      {/* Minimize button */}
+      <button
+        title={isMinimized ? "Maximize Header" : "Minimize Header"}
+        onClick={onToggleMinimize}
+        className="absolute top-1 p-2 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors z-10"
+        style={{ right: '8rem' }}
+      >
+        {isMinimized ? (
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+        )}
+      </button>
       {/* Advanced Filter Settings button */}
       <button
         title="Advanced Parser Settings"
@@ -94,16 +110,18 @@ export function Header({
       </button>
       <Particles />
       <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-main)', zIndex: 2 }}></div>
-      <div className="flex items-center gap-4 relative" style={{ zIndex: 1 }}>
-        <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className="h-24 filter brightness-0 invert" />
+      <div className={`flex items-center gap-4 relative`} style={{ zIndex: 1 }}>
+        <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className={`${isMinimized ? 'h-6 transform scale-150 ml-2' : 'h-24'} filter brightness-0 invert transition-transform`} />
         <div className="flex items-baseline gap-3">
-          <h1 className="text-5xl font-normal" style={{ color: 'var(--text-1)' }}>Rivals VFX Editor</h1>
-          <h2 className="text-1xl font-medium" style={{ color: 'var(--text-4)' }}>v3.3.0</h2>
+          <h1 className={`${isMinimized ? 'text-xl font-bold' : 'text-5xl font-normal'}`} style={{ color: 'var(--text-1)', fontFamily: isMinimized ? 'var(--font-main)' : undefined }}>Rivals VFX Editor</h1>
+          <h2 className={`${isMinimized ? 'text-xs' : 'text-1xl'} font-medium`} style={{ color: 'var(--text-4)' }}>v3.4.0</h2>
         </div>
       </div>
-      <span className="absolute bottom-2 right-4 text-xs" style={{ color: 'var(--text-4)', zIndex: 1 }}>
-        by Saturn
-      </span>
+      {!isMinimized && (
+        <span className="absolute bottom-2 right-4 text-xs" style={{ color: 'var(--text-4)', zIndex: 1 }}>
+          by Saturn
+        </span>
+      )}
     </div>
   );
 }

@@ -53,14 +53,17 @@ export function GlobalControls({
               onChange={(e) => setMasterColor(e.target.value)}
               className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }}
             />
-            <input
-              type="text"
-              value={masterColor.toUpperCase()}
-              onChange={(e) => setMasterColor(e.target.value)}
-              className="w-20 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none"
-              style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }}
-              maxLength={7}
-            />
+            <div className="flex items-center w-16 border-2 rounded-none focus-within:ring-1 focus-within:ring-[var(--accent-main)]" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-2)' }}>
+              <span className="text-xs font-mono pl-1.5 opacity-50 select-none" style={{ color: 'var(--text-2)' }}>#</span>
+              <input
+                type="text"
+                value={masterColor.replace(/^#/, '').toUpperCase()}
+                onChange={(e) => setMasterColor('#' + e.target.value.replace(/#/g, '').slice(0, 6))}
+                className="w-full px-1 py-0.5 text-xs text-left font-mono focus:outline-none bg-transparent border-none"
+                style={{ color: 'var(--text-2)' }}
+                maxLength={7}
+              />
+            </div>
           </div>
           <button onClick={onApplyMasterColor} className="flex-grow px-4 py-3 font-medium rounded-none transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent-main)', color: 'var(--bg-4)' }} disabled={isDisabled}>
             Apply Single
@@ -110,7 +113,10 @@ export function GlobalControls({
             {shuffleColors.slice(0, 3).map((color, index) => (
               <div key={index} className="flex flex-col items-center gap-2">
                 <input type="color" value={color} onChange={(e) => onShuffleColorChange(index, e.target.value)} className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }} />
-                <input type="text" value={color.toUpperCase()} onChange={(e) => onShuffleColorChange(index, e.target.value)} className="w-20 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none" style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }} maxLength={7} />
+                <div className="flex items-center w-16 border-2 rounded-none focus-within:ring-1 focus-within:ring-[var(--accent-main)]" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-2)' }}>
+                  <span className="text-xs font-mono pl-1.5 opacity-50 select-none" style={{ color: 'var(--text-2)' }}>#</span>
+                  <input type="text" value={color.replace(/^#/, '').toUpperCase()} onChange={(e) => onShuffleColorChange(index, '#' + e.target.value.replace(/#/g, '').slice(0, 6))} className="w-full px-1 py-0.5 text-xs text-left font-mono focus:outline-none bg-transparent border-none" style={{ color: 'var(--text-2)' }} maxLength={7} />
+                </div>
               </div>
             ))}
           </div>
@@ -119,7 +125,10 @@ export function GlobalControls({
               {shuffleColors.slice(3).map((color, index) => (
                 <div key={index + 3} className="flex flex-col items-center gap-2">
                   <input type="color" value={color} onChange={(e) => onShuffleColorChange(index + 3, e.target.value)} className="w-12 h-12 p-0 border-0 rounded-none cursor-pointer" style={{ backgroundColor: 'transparent' }} />
-                  <input type="text" value={color.toUpperCase()} onChange={(e) => onShuffleColorChange(index + 3, e.target.value)} className="w-20 px-1 py-0.5 text-xs text-center font-mono focus:outline-none border-2 rounded-none" style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-2)', borderColor: 'var(--bg-2)' }} maxLength={7} />
+                  <div className="flex items-center w-16 border-2 rounded-none focus-within:ring-1 focus-within:ring-[var(--accent-main)]" style={{ backgroundColor: 'var(--bg-2)', borderColor: 'var(--bg-2)' }}>
+                    <span className="text-xs font-mono pl-1.5 opacity-50 select-none" style={{ color: 'var(--text-2)' }}>#</span>
+                    <input type="text" value={color.replace(/^#/, '').toUpperCase()} onChange={(e) => onShuffleColorChange(index + 3, '#' + e.target.value.replace(/#/g, '').slice(0, 6))} className="w-full px-1 py-0.5 text-xs text-left font-mono focus:outline-none bg-transparent border-none" style={{ color: 'var(--text-2)' }} maxLength={7} />
+                  </div>
                 </div>
               ))}
             </div>

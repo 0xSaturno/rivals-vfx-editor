@@ -47,6 +47,11 @@ export async function setUiScale(scale: number): Promise<void> {
   return invoke('set_ui_scale', { scale });
 }
 
+export async function setHeaderMinimized(isMinimized: boolean): Promise<void> {
+  console.debug('[tauri] Setting header minimized:', isMinimized);
+  return invoke('set_header_minimized', { isMinimized });
+}
+
 export async function applyWebviewUiScale(scale: number): Promise<void> {
   const tauriGlobal = (window as any).__TAURI__;
   const webviewApi = tauriGlobal?.webviewWindow;

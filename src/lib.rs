@@ -81,6 +81,8 @@ pub struct AppSettings {
     pub ui_scale: f64,
     #[serde(default)]
     pub filter_dictionary: FilterDictionary,
+    #[serde(default)]
+    pub is_header_minimized: bool,
 }
 
 fn default_ui_scale() -> f64 {
@@ -96,6 +98,7 @@ impl Default for AppSettings {
             auto_clear_cache: false,
             ui_scale: default_ui_scale(),
             filter_dictionary: FilterDictionary::default(),
+            is_header_minimized: false,
         }
     }
 }
@@ -571,6 +574,13 @@ fn set_filter_dictionary(
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
     settings.filter_dictionary = dictionary;
+    save_settings(&settings)
+}
+
+#[tauri::command]
+fn set_header_minimized(is_minimized: bool, state: State<AppState>) -> Result<(), String> {
+    let mut settings = state.settings.lock().unwrap();
+    settings.is_header_minimized = is_minimized;
     save_settings(&settings)
 }
 
@@ -2943,6 +2953,7 @@ pub fn run() {
             set_auto_clear_cache,
             set_ui_scale,
             set_filter_dictionary,
+            set_header_minimized,
             get_cache_info,
             clear_cache,
             convert_uasset_to_json,

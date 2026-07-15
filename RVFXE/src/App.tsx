@@ -995,7 +995,18 @@ export function App() {
       <DebugConsole logs={debug.logs} showDebug={debug.showDebug} setShowDebug={debug.setShowDebug} clearLogs={debug.clearLogs} />
 
       <div className="w-full flex-1 flex flex-col min-h-0">
-        <Header settings={settings} onOpenSettings={handleOpenSettings} onOpenFilterSettings={() => setShowFilterSettings(true)} onReset={handleReset} addDebugLog={debug.addLog} />
+        <Header 
+          settings={settings} 
+          onOpenSettings={handleOpenSettings} 
+          onOpenFilterSettings={() => setShowFilterSettings(true)} 
+          onReset={handleReset} 
+          addDebugLog={debug.addLog} 
+          onToggleMinimize={() => {
+            const newVal = !settings.isHeaderMinimized;
+            setSettings(s => ({ ...s, isHeaderMinimized: newVal }));
+            tauri.setHeaderMinimized(newVal).catch(err => console.error('Failed to save header minimized state:', err));
+          }} 
+        />
 
         {/* Usmap Status Banner */}
         {usmapLoading && (
@@ -1016,8 +1027,8 @@ export function App() {
         <div className="mt-8 mb-0 flex-1 flex flex-col min-h-0">
           {colorParams.length > 0 ? (
             <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0">
-              <div className="lg:flex-shrink-0 global-controls-wrapper w-full">
-                <StyledPanel title="Global Controls">
+              <div className="lg:flex-shrink-0 global-controls-wrapper w-full flex flex-col min-h-0">
+                <StyledPanel title="Global Controls" className="flex flex-col flex-1 min-h-0" bodyClassName="flex flex-col flex-1 min-h-0 overflow-y-auto p-6 pt-8">
                   <GlobalControls
                     masterColor={masterColor} setMasterColor={setMasterColor}
                     hueShiftValue={hueShiftValue} setHueShiftValue={setHueShiftValue}

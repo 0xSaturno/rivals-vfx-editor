@@ -20,7 +20,7 @@ export function LoadFilesPanel({
   const hasUsmapPath = !!settings.usmapPath;
 
   return (
-    <div className="my-8 space-y-4">
+    <div className="flex flex-col gap-8">
       <StyledPanel title="Load Files">
         <div
           className="text-center py-20 px-6 border-2 border-dashed transition-colors"
