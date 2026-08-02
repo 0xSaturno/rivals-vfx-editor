@@ -114,7 +114,7 @@ export function Header({
         <img src="./assets/saturn-logo.svg" alt="Rivals Logo" className={`${isMinimized ? 'h-6 transform scale-150 ml-2' : 'h-24'} filter brightness-0 invert transition-transform`} />
         <div className="flex items-baseline gap-3">
           <h1 className={`${isMinimized ? 'text-xl font-bold' : 'text-5xl font-normal'}`} style={{ color: 'var(--text-1)', fontFamily: isMinimized ? 'var(--font-main)' : undefined }}>Rivals VFX Editor</h1>
-          <h2 className={`${isMinimized ? 'text-xs' : 'text-1xl'} font-medium`} style={{ color: 'var(--text-4)' }}>v3.4.0</h2>
+          <h2 className={`${isMinimized ? 'text-xs' : 'text-1xl'} font-medium`} style={{ color: 'var(--text-4)' }}>v3.4.1</h2>
         </div>
       </div>
       {!isMinimized && (

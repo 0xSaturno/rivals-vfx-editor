@@ -1568,46 +1568,69 @@ struct HeroRowData {
     en_name: Option<String>,
 }
 
-/// Find Game.locres, preferring English localizations when present.
+/// Find Game.locres, always preferring the English localization
+/// (the file under a `.../Localization/Game/en/Game.locres`-style path).
 fn find_locres_recursive(dir: &Path) -> Option<PathBuf> {
-    if !dir.exists() {
-        return None;
-    }
     let mut english_match: Option<PathBuf> = None;
     let mut fallback_match: Option<PathBuf> = None;
-    for entry in fs::read_dir(dir).ok()?.filter_map(Result::ok) {
+    collect_locres_candidates(dir, &mut english_match, &mut fallback_match);
+    if let Some(english) = english_match {
+        eprintln!("[DEBUG] Using English Game.locres at: {:?}", english);
+        return Some(english);
+    }
+    if let Some(fallback) = &fallback_match {
+        eprintln!(
+            "[DEBUG] No English Game.locres found; falling back to: {:?}",
+            fallback
+        );
+    }
+    fallback_match
+}
+
+/// Recursively walk `dir`, populating `english_match` as soon as a Game.locres
+/// under an `en`/`en-*`/`en_*` folder is found, and `fallback_match` with the
+/// first Game.locres of any locale otherwise. Stops descending once English is found.
+fn collect_locres_candidates(
+    dir: &Path,
+    english_match: &mut Option<PathBuf>,
+    fallback_match: &mut Option<PathBuf>,
+) {
+    if english_match.is_some() || !dir.exists() {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        if english_match.is_some() {
+            return;
+        }
         let path = entry.path();
         if path.is_dir() {
-            let dir_name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
-            let candidate = path.join("Game.locres");
-            if candidate.exists() {
-                if dir_name == "en" || dir_name.starts_with("en-") || dir_name.starts_with("en_") {
-                    eprintln!("[DEBUG] Preferred English Game.locres found at: {:?}", candidate);
-                    return Some(candidate);
-                }
-                if fallback_match.is_none() {
-                    eprintln!("[DEBUG] Non-English Game.locres candidate found at: {:?}", candidate);
-                    fallback_match = Some(candidate);
-                }
+            collect_locres_candidates(&path, english_match, fallback_match);
+        } else if path
+            .file_name()
+            .map(|name| name.eq_ignore_ascii_case("Game.locres"))
+            .unwrap_or(false)
+        {
+            let is_english = path
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .map(|name| {
+                    let name = name.to_string_lossy().to_ascii_lowercase();
+                    name == "en" || name.starts_with("en-") || name.starts_with("en_")
+                })
+                .unwrap_or(false);
+            if is_english {
+                eprintln!("[DEBUG] Preferred English Game.locres found at: {:?}", path);
+                *english_match = Some(path);
+                return;
+            } else if fallback_match.is_none() {
+                eprintln!("[DEBUG] Non-English Game.locres candidate found at: {:?}", path);
+                *fallback_match = Some(path);
             }
-            if let Some(found) = find_locres_recursive(&path) {
-                let parent_name = found
-                    .parent()
-                    .and_then(|parent| parent.file_name())
-                    .map(|name| name.to_string_lossy().to_ascii_lowercase());
-                if matches!(parent_name.as_deref(), Some(name) if name == "en" || name.starts_with("en-") || name.starts_with("en_")) {
-                    return Some(found);
-                }
-                if english_match.is_none() {
-                    english_match = Some(found);
-                }
-            }
-        } else if path.file_name()?.to_string_lossy().eq_ignore_ascii_case("Game.locres") && fallback_match.is_none() {
-            eprintln!("[DEBUG] Direct Game.locres candidate found at: {:?}", path);
-            fallback_match = Some(path);
         }
     }
-    english_match.or(fallback_match)
 }
 
 /// Spawn UAssetTool as a CLI process (not interactive mode) for extract_iostore_legacy.
@@ -1973,8 +1996,8 @@ async fn get_hero_roster(
     .await?;
     eprintln!("[DEBUG] extract_iostore_legacy stdout: {}", &stdout[..stdout.len().min(500)]);
 
-    // Find the extracted UIHeroTable.uasset
-    let hero_table_uasset = find_file_recursive(&hero_table_dir, "UIHeroTable.uasset");
+    // Find the extracted UIHeroTable.uasset (exact match, not e.g. "M2208UIHeroTable.uasset")
+    let hero_table_uasset = find_file_recursive_exact(&hero_table_dir, "UIHeroTable.uasset");
     let hero_table_uasset = hero_table_uasset.ok_or_else(|| {
         format!(
             "UIHeroTable.uasset not found after extraction. stdout: {}... stderr: {}...",
@@ -2448,6 +2471,30 @@ fn find_file_recursive(dir: &Path, pattern: &str) -> Option<PathBuf> {
         } else if path
             .file_name()
             .map(|n| n.to_string_lossy().contains(pattern))
+            .unwrap_or(false)
+        {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Like `find_file_recursive`, but matches the file name exactly (case-insensitive)
+/// instead of a substring, so e.g. "UIHeroTable.uasset" won't match "M2208UIHeroTable.uasset".
+fn find_file_recursive_exact(dir: &Path, file_name: &str) -> Option<PathBuf> {
+    if !dir.exists() {
+        return None;
+    }
+    for entry in fs::read_dir(dir).ok()? {
+        let entry = entry.ok()?;
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_file_recursive_exact(&path, file_name) {
+                return Some(found);
+            }
+        } else if path
+            .file_name()
+            .map(|n| n.eq_ignore_ascii_case(file_name))
             .unwrap_or(false)
         {
             return Some(path);
