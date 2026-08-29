@@ -21,6 +21,7 @@ import { ParameterTable } from '@/components/ParameterTable';
 import { ColorRangeFilter } from '@/components/ColorRangeFilter';
 import { LumaRangeFilter } from '@/components/LumaRangeFilter';
 import { LoadFilesPanel } from '@/components/LoadFilesPanel';
+import { ManualExtractionPage } from '@/components/ManualExtractionPage';
 import { StyledPanel } from '@/components/ui';
 import { SettingsModal, FilterSettingsModal, ConversionProgressOverlay, HeroBrowserModal } from '@/components/modals';
 
@@ -79,12 +80,14 @@ export function App() {
   // === UASSET INTEGRATION STATE ===
   const [settings, setSettings] = useState<AppSettings>({ usmapPath: null, paksPath: null, showDetailedErrors: true, autoClearCache: false, uiScale: 1 });
   const [showHeroBrowser, setShowHeroBrowser] = useState(false);
+  const [showManualExtraction, setShowManualExtraction] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [conversionProgress, setConversionProgress] = useState<ConversionProgress>({ current: 0, total: 0, fileName: '' });
   const [showSettings, setShowSettings] = useState(false);
   const [showFilterSettings, setShowFilterSettings] = useState(false);
   const [heroBrowserCacheInfo, setHeroBrowserCacheInfo] = useState<CacheInfo>({ fileCount: 0, totalSizeBytes: 0 });
   const [vfxCacheInfo, setVfxCacheInfo] = useState<CacheInfo>({ fileCount: 0, totalSizeBytes: 0 });
+  const [manualCacheInfo, setManualCacheInfo] = useState<CacheInfo>({ fileCount: 0, totalSizeBytes: 0 });
   const [uassetSourceMap, setUassetSourceMap] = useState<UassetSourceMap>({});
 
   const directoryHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
@@ -355,7 +358,6 @@ export function App() {
 
   // === COLOR ACTIONS ===
   const handleParamChange = useCallback((id: string, newRgba: RGBA) => {
-    console.debug('[App] handleParamChange', id);
     const newParams = colorParams.map(p => (p.id === id ? { ...p, rgba: newRgba } : p));
     recordHistory(newParams);
   }, [colorParams, recordHistory]);
@@ -558,9 +560,17 @@ export function App() {
     return params;
   }, [baseFilteredParams, hueRange, lumaRange]);
 
+  // Drag-selecting fires this once per row crossed; a linear findIndex over
+  // ~10k params on every one of those is what makes the drag stutter.
+  const paramIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+    filteredParams.forEach((p, i) => map.set(p.id, i));
+    return map;
+  }, [filteredParams]);
+
   const handleSelectionChange = useCallback((id: string) => {
-    const index = filteredParams.findIndex(p => p.id === id);
-    if (index === -1) return;
+    const index = paramIndexById.get(id);
+    if (index === undefined) return;
     setSelectedParams(prev => {
       const next = new Set(prev);
       if ((keyboard.shiftKey || keyboard.altKey) && lastSelectedIndex !== null) {
@@ -576,7 +586,12 @@ export function App() {
       return next;
     });
     setLastSelectedIndex(index);
-  }, [filteredParams, keyboard.shiftKey, keyboard.altKey, lastSelectedIndex]);
+  }, [filteredParams, paramIndexById, keyboard.shiftKey, keyboard.altKey, lastSelectedIndex]);
+
+  const filteredAssetCount = useMemo(
+    () => new Set(filteredParams.map(p => p.relativePath)).size,
+    [filteredParams]
+  );
 
   const handleSelectAll = useCallback(() => {
     if (selectedParams.size === filteredParams.length) setSelectedParams(new Set());
@@ -607,7 +622,12 @@ export function App() {
   const handleSave = useCallback(async () => {
     if (colorParams.length === 0) { alert('No parameters to save.'); return; }
     setSaveStatus('Saving...');
-    const modifiedFiles = JSON.parse(JSON.stringify(originalFiles));
+    // Clone per file: JSON.stringify over the whole map serializes every loaded
+    // asset into a single string and exceeds V8's max string length at scale.
+    const modifiedFiles: Record<string, any> = {};
+    for (const relativePath of Object.keys(originalFiles)) {
+      modifiedFiles[relativePath] = structuredClone(originalFiles[relativePath]);
+    }
     colorParams.forEach(param => {
       const fileToModify = modifiedFiles[param.relativePath];
       if (fileToModify) setNestedValue(fileToModify, param.path, param.rgba);
@@ -668,7 +688,15 @@ export function App() {
       setIsConverting(true);
       setConversionProgress({ current: 0, total: filesToSave.length, fileName: 'Preparing...' });
 
-      const modifiedFiles = JSON.parse(JSON.stringify(originalFiles));
+      // Only clone the files being saved, one at a time. Deep-cloning the whole
+      // originalFiles map via JSON.stringify throws RangeError: Invalid string
+      // length once enough assets are loaded (V8 caps strings at ~512MB).
+      const saveSet = new Set(filesToSave);
+      const modifiedFiles: Record<string, any> = {};
+      for (const keyPath of saveSet) {
+        const original = originalFiles[keyPath];
+        if (original !== undefined) modifiedFiles[keyPath] = structuredClone(original);
+      }
       colorParams.forEach(param => {
         const fileToModify = modifiedFiles[param.relativePath];
         if (fileToModify) setNestedValue(fileToModify, param.path, param.rgba);
@@ -873,6 +901,8 @@ export function App() {
       setHeroBrowserCacheInfo({ fileCount: hbCache.file_count, totalSizeBytes: hbCache.total_size_bytes });
       const vfxCache = await tauri.getVfxCacheInfo();
       setVfxCacheInfo({ fileCount: vfxCache.file_count, totalSizeBytes: vfxCache.total_size_bytes });
+      const manualCache = await tauri.getManualCacheInfo();
+      setManualCacheInfo({ fileCount: manualCache.file_count, totalSizeBytes: manualCache.total_size_bytes });
     } catch (err) { debug.addLog(`Failed to refresh cache info: ${err}`); }
   }, [debug.addLog]);
 
@@ -984,6 +1014,80 @@ export function App() {
     }
   }, [debug, processFileObjects, colorParams.length]);
 
+  const handleManualExtract = useCallback(async (assetPaths: string[]) => {
+    console.debug('[App] handleManualExtract', assetPaths.length, 'assets');
+    setShowManualExtraction(false);
+    setIsConverting(true);
+    setConversionProgress({ current: 0, total: assetPaths.length, fileName: `Extracting ${assetPaths.length} assets...` });
+
+    try {
+      debug.addLog(`Extracting ${assetPaths.length} manually queued assets...`);
+      const result = await tauri.extractManualAssets(assetPaths);
+      console.debug('[App] Manual extract result:', result);
+
+      if (result.error) debug.addLog(`Manual extraction warning: ${result.error}`);
+
+      if (result.json_paths.length === 0) {
+        debug.addLog('Manual extraction produced no readable assets');
+        alert(`No assets could be extracted. ${result.error ?? ''}`);
+        return;
+      }
+
+      debug.addLog(`Got ${result.json_paths.length} JSON files from manual extraction`);
+
+      const fileObjects: { name: string; content: string; relativePath: string }[] = [];
+      const newSourceMap: Record<string, { uassetPath: string; jsonPath: string }> = {};
+
+      setConversionProgress({ current: 0, total: result.json_paths.length, fileName: 'Loading converted files...' });
+
+      for (let i = 0; i < result.json_paths.length; i++) {
+        const jsonPath = result.json_paths[i];
+        const fileName = jsonPath.split(/[\\/]/).pop() || 'unknown.json';
+        const uassetPath = result.uasset_paths[i] || '';
+
+        try {
+          const content = await tauri.readTextFile(jsonPath);
+          // Assets are extracted as <root>/Content/..., so anchor the display
+          // path on the last Content segment to get the in-game path back.
+          const parts = jsonPath.replace(/\\/g, '/').split('/');
+          const contentIdx = parts.lastIndexOf('Content');
+          const relativePath = contentIdx >= 0 ? parts.slice(contentIdx + 1).join('/') : fileName;
+
+          fileObjects.push({ name: fileName, content, relativePath });
+          newSourceMap[relativePath] = { uassetPath, jsonPath };
+
+          setConversionProgress({ current: i + 1, total: result.json_paths.length, fileName });
+        } catch (readErr) {
+          console.error('[App] Failed to read manual JSON:', jsonPath, readErr);
+          debug.addLog(`Failed to read ${fileName}: ${readErr}`);
+        }
+      }
+
+      if (fileObjects.length > 0) {
+        setConversionProgress({ current: result.json_paths.length, total: result.json_paths.length, fileName: 'Extracting color parameters...' });
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Matches the hero browser: fold into the open session if there is one,
+        // otherwise this extraction starts a fresh one.
+        const shouldAppend = colorParams.length > 0;
+        setUassetSourceMap(prev => (shouldAppend ? { ...prev, ...newSourceMap } : newSourceMap));
+        if (!shouldAppend) setSessionName('ManualExtraction');
+
+        processFileObjects(fileObjects, shouldAppend);
+        debug.addLog(`Loaded ${fileObjects.length} manually extracted assets`);
+      } else {
+        debug.addLog('No readable files found in manual extraction');
+      }
+    } catch (err) {
+      console.error('[App] Manual extraction failed:', err);
+      debug.addLog(`Manual extraction failed: ${err}`);
+      alert(`Failed to extract queued assets: ${err}`);
+    } finally {
+      setIsConverting(false);
+      setConversionProgress({ current: 0, total: 0, fileName: '' });
+    }
+  }, [debug, processFileObjects, colorParams.length]);
+
   // === DRAG HANDLERS ===
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); }, []);
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); }, []);
@@ -1025,7 +1129,13 @@ export function App() {
         )}
 
         <div className="mt-8 mb-0 flex-1 flex flex-col min-h-0">
-          {colorParams.length > 0 ? (
+          {showManualExtraction ? (
+            <ManualExtractionPage
+              onClose={() => setShowManualExtraction(false)}
+              onExtract={handleManualExtract}
+              addDebugLog={debug.addLog}
+            />
+          ) : colorParams.length > 0 ? (
             <div className="flex flex-col lg:flex-row gap-8 flex-1 min-h-0">
               <div className="lg:flex-shrink-0 global-controls-wrapper w-full flex flex-col min-h-0">
                 <StyledPanel title="Global Controls" className="flex flex-col flex-1 min-h-0" bodyClassName="flex flex-col flex-1 min-h-0 overflow-y-auto p-6 pt-8">
@@ -1144,7 +1254,7 @@ export function App() {
                       </div>
                     </div>
                     <p className="text-sm" style={{ color: 'var(--text-4)' }}>
-                      {filteredParams.length} color parameters found across {new Set(filteredParams.map(p => p.relativePath)).size} assets. <span style={{ color: 'var(--accent-main)' }}>{selectedParams.size} selected.</span>
+                      {filteredParams.length} color parameters found across {filteredAssetCount} assets. <span style={{ color: 'var(--accent-main)' }}>{selectedParams.size} selected.</span>
                     </p>
                   </div>
                   <ParameterTable
@@ -1157,13 +1267,13 @@ export function App() {
               </div>
             </div>
           ) : (
-            <LoadFilesPanel settings={settings} isDragging={isDragging} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onSelectFolder={handleSelectUassetFolder} onBrowseHeroes={() => { console.debug('[App] Opening hero browser'); setShowHeroBrowser(true); }} />
+            <LoadFilesPanel settings={settings} isDragging={isDragging} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onSelectFolder={handleSelectUassetFolder} onBrowseHeroes={() => { console.debug('[App] Opening hero browser'); setShowHeroBrowser(true); }} onManualExtraction={() => { console.debug('[App] Opening manual extraction'); setShowManualExtraction(true); }} />
           )}
         </div>
       </div>
 
       {/* MODALS */}
-      {showSettings && <SettingsModal settings={settings} setSettings={setSettings} heroBrowserCacheInfo={heroBrowserCacheInfo} vfxCacheInfo={vfxCacheInfo} onClose={() => setShowSettings(false)} onClearHeroBrowserCache={async () => { await tauri.clearHeroBrowserCache(); setHeroBrowserCacheInfo({ fileCount: 0, totalSizeBytes: 0 }); }} onClearVfxCache={async () => { await tauri.clearVfxCache(); setVfxCacheInfo({ fileCount: 0, totalSizeBytes: 0 }); }} />}
+      {showSettings && <SettingsModal settings={settings} setSettings={setSettings} heroBrowserCacheInfo={heroBrowserCacheInfo} vfxCacheInfo={vfxCacheInfo} manualCacheInfo={manualCacheInfo} onClose={() => setShowSettings(false)} onClearHeroBrowserCache={async () => { await tauri.clearHeroBrowserCache(); setHeroBrowserCacheInfo({ fileCount: 0, totalSizeBytes: 0 }); }} onClearVfxCache={async () => { await tauri.clearVfxCache(); setVfxCacheInfo({ fileCount: 0, totalSizeBytes: 0 }); }} onClearManualCache={async () => { await tauri.clearManualCache(); setManualCacheInfo({ fileCount: 0, totalSizeBytes: 0 }); }} />}
       {showFilterSettings && <FilterSettingsModal filterDictionary={filterDictionary} onChangeDictionary={handleFilterDictionaryChange} onClose={() => setShowFilterSettings(false)} onReset={() => handleFilterDictionaryChange(DEFAULT_FILTER_DICTIONARY)} />}
       {isConverting && <ConversionProgressOverlay conversionProgress={conversionProgress} />}
       {showHeroBrowser && <HeroBrowserModal onClose={() => setShowHeroBrowser(false)} onSelectHero={handleHeroSelect} addDebugLog={debug.addLog} />}

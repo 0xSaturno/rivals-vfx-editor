@@ -160,3 +160,22 @@ html {
     min-width: 300px;
     max-width: 400px;
 }
+
+/* ===== Manual Extraction rows =====
+   The vendored tailwind.min.css predates slash-opacity utilities, so
+   `hover:bg-white/5` and friends generate nothing. These rows band and
+   highlight from here instead. Hover is declared after the stripe so it wins
+   on both banded and unbanded rows. */
+.mx-row {
+    background-color: transparent;
+    transition: background-color .12s ease;
+}
+
+.mx-row-striped {
+    background-color: rgba(255, 255, 255, 0.028);
+}
+
+.mx-row:hover,
+.mx-row-striped:hover {
+    background-color: var(--bg-2);
+}

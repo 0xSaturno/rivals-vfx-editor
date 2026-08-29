@@ -8,6 +8,7 @@ import type {
   FilterDictionary,
   HeroRosterResult,
   HeroVfxResult,
+  AssetIndexResult,
   UsmapStatus,
 } from '@/types';
 
@@ -155,6 +156,26 @@ export async function getHeroIconDataUrl(heroId: string): Promise<string> {
 export async function extractHeroVfx(heroId: string, koMode = false): Promise<HeroVfxResult> {
   console.debug('[tauri] Extracting hero VFX/KO for:', heroId, 'koMode:', koMode);
   return invoke('extract_hero_vfx', { heroId, koMode });
+}
+
+// ===== Manual Extraction =====
+
+export async function listGameAssets(forceRefresh = false): Promise<AssetIndexResult> {
+  console.debug('[tauri] Listing game assets, forceRefresh=', forceRefresh);
+  return invoke('list_game_assets', { forceRefresh });
+}
+
+export async function extractManualAssets(assetPaths: string[]): Promise<HeroVfxResult> {
+  console.debug('[tauri] Extracting', assetPaths.length, 'manually queued assets');
+  return invoke('extract_manual_assets', { assetPaths });
+}
+
+export async function getManualCacheInfo(): Promise<{ file_count: number; total_size_bytes: number }> {
+  return invoke('get_manual_cache_info');
+}
+
+export async function clearManualCache(): Promise<void> {
+  return invoke('clear_manual_cache');
 }
 
 // ===== Usmap Management =====

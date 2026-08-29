@@ -16,7 +16,7 @@ export function FilterSettingsModal({
 }: FilterSettingsModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
-      <div className="w-full max-w-lg p-6 shadow-xl border-2 flex flex-col max-h-[90vh] relative group" style={{ backgroundColor: 'var(--bg-3)', borderColor: 'var(--bg-2)' }}>
+      <div className="w-full max-w-lg p-6 shadow-xl border-2 flex flex-col relative group" style={{ backgroundColor: 'var(--bg-3)', borderColor: 'var(--bg-2)', maxHeight: '90vh' }}>
         <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-warning, #f59e0b)', zIndex: 10 }}></div>
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">

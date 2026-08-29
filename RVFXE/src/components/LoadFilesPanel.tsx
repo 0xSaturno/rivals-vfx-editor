@@ -9,12 +9,13 @@ interface LoadFilesPanelProps {
   onDrop: (e: React.DragEvent) => void;
   onSelectFolder: () => void;
   onBrowseHeroes: () => void;
+  onManualExtraction: () => void;
 }
 
 export function LoadFilesPanel({
   settings, isDragging,
   onDragOver, onDragLeave, onDrop,
-  onSelectFolder, onBrowseHeroes,
+  onSelectFolder, onBrowseHeroes, onManualExtraction,
 }: LoadFilesPanelProps) {
   const hasPaksPath = !!settings.paksPath;
   const hasUsmapPath = !!settings.usmapPath;
@@ -23,7 +24,7 @@ export function LoadFilesPanel({
     <div className="flex flex-col gap-8">
       <StyledPanel title="Load Files">
         <div
-          className="text-center py-20 px-6 border-2 border-dashed transition-colors"
+          className="text-center py-10 px-6 border-2 border-dashed transition-colors"
           style={{ backgroundColor: 'var(--bg-2)', borderColor: isDragging ? 'var(--accent-main)' : 'var(--bg-1)', opacity: hasUsmapPath ? 1 : 0.6 }}
           onDragOver={hasUsmapPath ? onDragOver : undefined}
           onDragLeave={hasUsmapPath ? onDragLeave : undefined}
@@ -75,6 +76,42 @@ export function LoadFilesPanel({
           </button>
           <p className="text-sm text-center" style={{ color: 'var(--text-4)' }}>
             Browse and load VFX materials directly from game files by hero.
+          </p>
+          {(!hasUsmapPath || !hasPaksPath) && (
+            <p className="text-xs" style={{ color: 'var(--accent-warning, #f59e0b)' }}>
+              {!hasUsmapPath && !hasPaksPath
+                ? 'Set both .usmap and Game Paks paths in Settings to use this feature.'
+                : !hasUsmapPath
+                  ? 'Set .usmap path in Settings first.'
+                  : 'Set Game Paks path in Settings first.'}
+            </p>
+          )}
+        </div>
+      </StyledPanel>
+
+      {/* Manual Extraction Button */}
+      <StyledPanel title="Manual Extraction">
+        <div className="p-4 flex flex-col items-center gap-3">
+
+          <button
+            onClick={onManualExtraction}
+            disabled={!hasUsmapPath || !hasPaksPath}
+            className="flex items-center gap-2 px-6 py-3 font-medium rounded-none transition-colors shadow-md disabled:cursor-not-allowed"
+            style={{
+              backgroundColor: (!hasUsmapPath || !hasPaksPath) ? 'var(--bg-1)' : 'var(--accent-main)',
+              color: (!hasUsmapPath || !hasPaksPath) ? 'var(--text-4)' : 'var(--bg-4)',
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2" />
+              <path d="M3 7h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <path d="M12 11v6" />
+              <path d="m9 14 3 3 3-3" />
+            </svg>
+            Browse Game Files
+          </button>
+          <p className="text-sm text-center" style={{ color: 'var(--text-4)' }}>
+            Browse the game's IoStore containers as a folder tree, then queue material instances to extract and import.
           </p>
           {(!hasUsmapPath || !hasPaksPath) && (
             <p className="text-xs" style={{ color: 'var(--accent-warning, #f59e0b)' }}>

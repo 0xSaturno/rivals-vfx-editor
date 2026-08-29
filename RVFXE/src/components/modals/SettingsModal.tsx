@@ -1,15 +1,41 @@
+import { useEffect, useRef } from 'react';
 import type { AppSettings, CacheInfo } from '@/types';
 import { ToggleSwitch } from '@/components/ui';
 import * as tauri from '@/services/tauri';
+
+/** Read-only path field scrolled to its tail, which is the part that identifies it. */
+function PathField({ value, placeholder }: { value: string; placeholder: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [value]);
+
+  return (
+    <input
+      ref={ref}
+      type="text"
+      value={value}
+      readOnly
+      placeholder={placeholder}
+      title={value}
+      className="flex-grow px-3 py-2 rounded-none text-sm"
+      style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-3)' }}
+    />
+  );
+}
 
 interface SettingsModalProps {
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   heroBrowserCacheInfo: CacheInfo;
   vfxCacheInfo: CacheInfo;
+  manualCacheInfo: CacheInfo;
   onClose: () => void;
   onClearHeroBrowserCache: () => void;
   onClearVfxCache: () => void;
+  onClearManualCache: () => void;
 }
 
 export function SettingsModal({
@@ -17,9 +43,11 @@ export function SettingsModal({
   setSettings,
   heroBrowserCacheInfo,
   vfxCacheInfo,
+  manualCacheInfo,
   onClose,
   onClearHeroBrowserCache,
   onClearVfxCache,
+  onClearManualCache,
 }: SettingsModalProps) {
   const UI_SCALE_OPTIONS = [
     { value: 0.8, label: '80%' },
@@ -31,30 +59,28 @@ export function SettingsModal({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
-      <div className="w-full max-w-md p-6 shadow-xl border-2 relative group" style={{ backgroundColor: 'var(--bg-3)', borderColor: 'var(--bg-2)' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
+      {/* maxHeight is inline, not max-h-[90vh]: the vendored tailwind build has no
+          arbitrary-value utilities, so that class generates no CSS at all. */}
+      <div className="w-full max-w-md flex flex-col shadow-xl border-2 relative group" style={{ backgroundColor: 'var(--bg-3)', borderColor: 'var(--bg-2)', maxHeight: '90vh' }}>
         <div className="absolute inset-0 border-2 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--accent-main)', zIndex: 10 }}></div>
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center p-6 pb-0 flex-shrink-0">
           <h2 className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>Settings</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-white/10 transform hover:scale-125 transition-transform duration-200" style={{ color: 'var(--text-2)' }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
           </button>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 flex-1 min-h-0 overflow-y-auto p-6">
           {/* Usmap Path */}
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-2)' }}>
               .usmap File Path
             </label>
             <div className="flex gap-2">
-              <input
-                type="text"
+              <PathField
                 value={settings.usmapPath || ''}
-                readOnly
                 placeholder="No .usmap file selected"
-                className="flex-grow px-3 py-2 rounded-none text-sm"
-                style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-3)' }}
               />
               <button
                 onClick={async () => {
@@ -99,13 +125,9 @@ export function SettingsModal({
               Game Paks Directory
             </label>
             <div className="flex gap-2">
-              <input
-                type="text"
+              <PathField
                 value={settings.paksPath || ''}
-                readOnly
                 placeholder="No Paks directory selected"
-                className="flex-grow px-3 py-2 rounded-none text-sm"
-                style={{ backgroundColor: 'var(--bg-2)', color: 'var(--text-3)' }}
               />
               <button
                 onClick={async () => {
@@ -207,6 +229,26 @@ export function SettingsModal({
             <p className="text-xs mt-1" style={{ color: 'var(--text-4)' }}>Extracted hero VFX assets and converted JSON files</p>
           </div>
 
+          {/* Manual Extraction Cache */}
+          <div>
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-2)' }}>
+              Manual Extraction Cache
+            </label>
+            <div className="flex items-center justify-between p-3 rounded" style={{ backgroundColor: 'var(--bg-2)' }}>
+              <span className="text-sm" style={{ color: 'var(--text-3)' }}>
+                {manualCacheInfo.fileCount} files ({(manualCacheInfo.totalSizeBytes / 1024 / 1024).toFixed(1)} MB)
+              </span>
+              <button
+                onClick={onClearManualCache}
+                className="px-3 py-1 text-sm font-medium rounded-none"
+                style={{ backgroundColor: 'var(--bg-1)', color: 'var(--text-2)' }}
+              >
+                Clear
+              </button>
+            </div>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-4)' }}>Container asset index and manually extracted assets</p>
+          </div>
+
           {/* Open Cache Folder */}
           <div className="flex justify-end">
             <button
@@ -233,7 +275,7 @@ export function SettingsModal({
           />
         </div>
 
-        <div className="mt-8 text-center">
+        <div className="p-6 pt-0 text-center flex-shrink-0">
           <button
             onClick={onClose}
             className="px-8 py-2 font-medium rounded-none"

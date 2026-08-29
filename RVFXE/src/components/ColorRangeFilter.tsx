@@ -71,8 +71,6 @@ export function ColorRangeFilter({ colorParams, hueRange, onHueRangeChange }: Co
     return count;
   }, [colorParams, hueRange, isFiltering]);
 
-  console.log('[ColorRangeFilter] hueRange:', hueRange, 'filteredCount:', filteredCount, 'total:', colorParams.length, 'isFiltering:', isFiltering);
-
   return (
     <div className="w-full select-none">
       <div className="flex items-center justify-between mb-1">

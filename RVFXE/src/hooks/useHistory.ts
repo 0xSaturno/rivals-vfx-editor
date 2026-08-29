@@ -13,6 +13,8 @@ export interface HistoryAPI {
   getOriginalParams: () => ColorParam[];
 }
 
+const MAX_HISTORY = 100;
+
 export function useHistory(): HistoryAPI {
   const [history, setHistory] = useState<ColorParam[][]>([[]]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -21,11 +23,16 @@ export function useHistory(): HistoryAPI {
 
   const recordHistory = useCallback((newParams: ColorParam[]) => {
     setHistory(prev => {
-      const newHistory = [...prev.slice(0, historyIndex + 1), newParams];
-      console.debug('[useHistory] Recorded new state, history length:', newHistory.length);
-      return newHistory;
+      const next = [...prev.slice(0, historyIndex + 1), newParams];
+      // Each entry is a full copy of the param array (~10k entries at scale),
+      // so drop the oldest edits instead of growing without bound. Index 0 is
+      // the pristine load that getOriginalParams() reports, so it always stays.
+      if (next.length > MAX_HISTORY) {
+        return [next[0], ...next.slice(next.length - (MAX_HISTORY - 1))];
+      }
+      return next;
     });
-    setHistoryIndex(prev => prev + 1);
+    setHistoryIndex(prev => Math.min(prev + 1, MAX_HISTORY - 1));
   }, [historyIndex]);
 
   const handleUndo = useCallback(() => {

@@ -121,6 +121,15 @@ export interface HeroVfxResult {
   error: string | null;
 }
 
+// ===== Manual Extraction =====
+export interface AssetIndexResult {
+  assets: string[];
+  cached: boolean;
+  container_count: number;
+  total_packages: number;
+  error: string | null;
+}
+
 // ===== Session Data (project file) =====
 export interface SessionEntry {
   relativePath: string;

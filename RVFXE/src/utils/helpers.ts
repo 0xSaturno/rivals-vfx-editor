@@ -8,7 +8,6 @@ export function setNestedValue(obj: any, path: (string | number)[], value: unkno
     schema = schema[path[i]];
   }
   schema[path[path.length - 1]] = value;
-  console.debug('[setNestedValue] Set path', path, 'to', value);
 }
 
 /**

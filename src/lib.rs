@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 #[cfg(target_os = "windows")]
@@ -2974,6 +2974,704 @@ fn log_unique_params(param_names: Vec<String>) {
 }
 
 // ============================================================================
+// MANUAL EXTRACTION - IOSTORE BROWSER
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AssetIndexResult {
+    pub assets: Vec<String>,
+    pub cached: bool,
+    pub container_count: usize,
+    pub total_packages: usize,
+    pub error: Option<String>,
+}
+
+/// Default Marvel Rivals AES key. The game's IoStore containers are obfuscated,
+/// and unlike the CLI path the interactive `list_iostore_files` action does not
+/// auto-detect that — without an explicit key every container lists 0 packages.
+const MARVEL_AES_KEY: &str = "0C263D8C22DCB085894899C3A3796383E9BF9DE0CBFB08C9BF2DEF2E84F29D74";
+
+fn get_manual_cache_dir() -> PathBuf {
+    get_cache_dir().join("manual-extract")
+}
+
+fn get_asset_index_cache_path() -> PathBuf {
+    // Named apart from the name-matched index this replaced, so a cache written
+    // by that build is rebuilt rather than served back.
+    get_manual_cache_dir().join("asset_index_typed.json")
+}
+
+/// Check that an IoStore chunk path carries a content root, and hand it back.
+///
+/// UAssetTool 1.5.8 resolves the mount point during listing, so a path arrives
+/// whole - plugin content as `Marvel/Plugins/MarvelGAS/Content/...` rather than
+/// with the mount repeated and unresolved `..` segments left in it. Keeping the
+/// full root is what nests a plugin under its parent in the tree instead of
+/// stranding it beside `Marvel`; only paths with no `/Content/` are dropped.
+fn normalize_package_path(raw: &str) -> Option<String> {
+    let (root, _) = raw.split_once("/Content/")?;
+    if root.is_empty() {
+        return None;
+    }
+    Some(raw.to_string())
+}
+
+/// Convert a normalized path into the package name understood by
+/// `extract_iostore_legacy --filter`.
+///
+/// `Marvel/Content/X.uasset` becomes `/Game/X`, which the extractor resolves
+/// through a direct package-id hash lookup. Anything else (plugin content such
+/// as `Marvel/Plugins/MarvelGAS/Content/...`) has no `/Game/` equivalent, so it
+/// falls back to a substring pattern the extractor matches by scanning packages.
+fn package_filter_for(normalized: &str) -> String {
+    let without_ext = normalized
+        .strip_suffix(".uasset")
+        .or_else(|| normalized.strip_suffix(".umap"))
+        .unwrap_or(normalized);
+
+    match without_ext.split_once("/Content/") {
+        Some(("Marvel", rest)) => format!("/Game/{}", rest),
+        Some((_root, rest)) => rest.to_string(),
+        None => without_ext.to_string(),
+    }
+}
+
+/// One container's contribution to the asset index, with the identity it was
+/// read at. A game patch rewrites or adds `.utoc` files and leaves the rest
+/// alone, so a container whose size and mtime still match does not need to be
+/// read again - only what the patch touched is re-typed.
+#[derive(Debug, Serialize, Deserialize)]
+struct CachedContainer {
+    name: String,
+    size: u64,
+    modified_ms: u64,
+    assets: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AssetIndexCache {
+    /// Bumped when the selection changes meaning, so entries written by an
+    /// older rule are re-read rather than trusted.
+    version: u32,
+    containers: Vec<CachedContainer>,
+}
+
+/// Current meaning of a cache entry: material instances by resolved asset type,
+/// keyed by full VFS path. Bumped for the path shape, which v2 stored flattened.
+const ASSET_INDEX_CACHE_VERSION: u32 = 3;
+
+/// Size and modification time of a container, used to tell whether the file on
+/// disk is still the one the cache was built from.
+fn container_identity(path: &Path) -> Option<(u64, u64)> {
+    let meta = fs::metadata(path).ok()?;
+    let modified_ms = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis() as u64;
+    Some((meta.len(), modified_ms))
+}
+
+/// Content roots kept out of the browser. Engine content holds editor-only
+/// materials and its plugins the glTF importer's, Niagara's and Paper2D's,
+/// none of which ships as game content - together 49 assets that only add
+/// noise to the tree and to search results.
+const HIDDEN_CONTENT_ROOTS: [&str; 1] = ["Engine"];
+
+/// True if a normalized path sits under a content root the browser hides.
+///
+/// Matched on the root's first segment so an engine plugin is covered by its
+/// mount rather than by the leaf it happens to end in - `Engine/Plugins/FX/
+/// Niagara` hides with `Engine`, and no per-plugin entry is needed.
+fn is_hidden_root(normalized: &str) -> bool {
+    normalized
+        .split_once("/Content/")
+        .map(|(root, _)| {
+            let mount = root.split_once('/').map(|(head, _)| head).unwrap_or(root);
+            HIDDEN_CONTENT_ROOTS.contains(&mount)
+        })
+        .unwrap_or(false)
+}
+
+/// The asset class the browser lists. UAssetTool resolves this from the zen
+/// header and the script objects, so it is the class the cooker wrote rather
+/// than a guess from the file name.
+///
+/// This replaced an `MI_` prefix match: measured against the shipped containers
+/// that match pulled in 196 textures named `MI_*` and missed 410 instances with
+/// no prefix. Typing costs an index build of ~33s against ~7s for names, down
+/// from ~1m45s before 5c81ad7 and 018738a made it parallel.
+///
+/// Master materials (`Material`) are deliberately not included: editing one
+/// propagates to every instance built on it.
+const BROWSABLE_ASSET_TYPE: &str = "MaterialInstanceConstant";
+
+/// Containers the browser does not index, matched on the start of the file name.
+///
+/// Measured over the shipped containers, these scan a lot of packages for very
+/// few material instances - `Wwise` types 39,898 packages for none at all, and
+/// `HQ` plus `LQ` 67,127 for 270 between them - or hold no packages whatsoever
+/// (`Locres`, `ShaderAsset`). `pakchunkMap` covers Map1-8 and any later map.
+///
+/// Prefixes rather than exact names so a container added by a game update is
+/// covered without a code change. This only narrows what the tree lists;
+/// extraction still loads every container in the Paks directory.
+const SKIPPED_CONTAINER_PREFIXES: [&str; 7] = [
+    "pakchunkmap",
+    "pakchunkhq",
+    "pakchunklq",
+    "pakchunkmovies",
+    "pakchunkwwise",
+    "pakchunklocres",
+    "pakchunkshaderasset",
+];
+
+/// True if a container is left out of the index.
+///
+/// `global.utoc` is skipped as a listing - it carries the script objects and no
+/// packages - but stays reachable through the `game_paks` argument, which is
+/// what type resolution actually reads it for. Every `*optional` container
+/// holds optional bulk data (`.uptnl`) rather than packages.
+fn is_skipped_container(file_name: &str) -> bool {
+    let name = file_name.to_ascii_lowercase();
+    name == "global.utoc"
+        || name.contains("optional")
+        || SKIPPED_CONTAINER_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+}
+
+/// Collect the game's IoStore containers from the Paks directory.
+///
+/// Deliberately flat: only `.utoc` files sitting directly in `/Paks/` count as
+/// game containers. Mod loaders drop their containers in subfolders such as
+/// `~mods/`, and those must never be indexed or extracted from - the browser is
+/// for shipped game content, and a mod container would otherwise shadow the
+/// real asset. This mirrors `extract_iostore_legacy`, which loads the same
+/// directory with `SearchOption.TopDirectoryOnly`.
+fn collect_game_containers(paks_dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut utocs: Vec<PathBuf> = fs::read_dir(paks_dir)
+        .map_err(|e| format!("Failed to read Paks directory: {}", e))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            // is_file() keeps a directory that merely ends in .utoc out of the list.
+            path.is_file()
+                && path
+                    .extension()
+                    .map(|ext| ext.eq_ignore_ascii_case("utoc"))
+                    .unwrap_or(false)
+                && path
+                    .file_name()
+                    .map(|name| !is_skipped_container(&name.to_string_lossy()))
+                    .unwrap_or(false)
+        })
+        .collect();
+    utocs.sort();
+    Ok(utocs)
+}
+
+#[tauri::command]
+async fn list_game_assets(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    force_refresh: Option<bool>,
+) -> Result<AssetIndexResult, String> {
+    let force = force_refresh.unwrap_or(false);
+    eprintln!("[DEBUG] list_game_assets called, force_refresh={}", force);
+
+    let index_cache_path = get_asset_index_cache_path();
+
+    // Cached containers, keyed by file name. A refresh drops them all; otherwise
+    // each is reused only if the file on disk still matches what it was read at.
+    let mut cached_containers: HashMap<String, CachedContainer> = HashMap::new();
+    if !force && index_cache_path.exists() {
+        match fs::read_to_string(&index_cache_path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<AssetIndexCache>(&raw).ok())
+        {
+            Some(cache) if cache.version == ASSET_INDEX_CACHE_VERSION => {
+                eprintln!(
+                    "[DEBUG] Loaded asset index cache: {} containers",
+                    cache.containers.len()
+                );
+                for entry in cache.containers {
+                    cached_containers.insert(entry.name.clone(), entry);
+                }
+            }
+            Some(cache) => eprintln!(
+                "[DEBUG] Asset index cache is version {}, rebuilding at {}",
+                cache.version, ASSET_INDEX_CACHE_VERSION
+            ),
+            None => eprintln!("[DEBUG] Asset index cache unreadable, rebuilding"),
+        }
+    }
+
+    let paks_path = {
+        let settings = state.settings.lock().unwrap();
+        settings.paks_path.clone()
+    };
+    let paks_path =
+        paks_path.ok_or_else(|| "Game Paks path not set. Please set it in Settings.".to_string())?;
+
+    let paks_dir = Path::new(&paks_path);
+    if !paks_dir.exists() {
+        return Err(format!("Game Paks directory not found: {}", paks_path));
+    }
+
+    let tool_path = get_uasset_tool_path(&app);
+    if !tool_path.exists() {
+        return Err(format!("UAssetTool not found at: {:?}", tool_path));
+    }
+
+    let utocs = collect_game_containers(paks_dir)?;
+
+    if utocs.is_empty() {
+        return Err(format!("No .utoc containers found in {}", paks_path));
+    }
+
+    eprintln!(
+        "[DEBUG] Indexing {} top-level IoStore containers (mod subfolders such as ~mods are skipped)...",
+        utocs.len()
+    );
+
+    let container_count = utocs.len();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut total_packages = 0usize;
+    let mut first_error: Option<String> = None;
+    let mut fresh_entries: Vec<CachedContainer> = Vec::with_capacity(container_count);
+    let mut reused = 0usize;
+
+    let mut process_guard = state.tool_process.lock().await;
+
+    for (i, utoc) in utocs.iter().enumerate() {
+        let container_name = utoc
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let identity = container_identity(utoc);
+
+        // Unchanged since it was last read: take its assets from the cache and
+        // skip the typing pass, which is all of the cost.
+        if let Some((size, modified_ms)) = identity {
+            if let Some(entry) = cached_containers.get(&container_name) {
+                if entry.size == size && entry.modified_ms == modified_ms {
+                    total_packages += entry.assets.len();
+                    for path in &entry.assets {
+                        if !is_hidden_root(path) {
+                            seen.insert(path.clone());
+                        }
+                    }
+                    reused += 1;
+                    fresh_entries.push(CachedContainer {
+                        name: container_name.clone(),
+                        size,
+                        modified_ms,
+                        assets: entry.assets.clone(),
+                    });
+                    continue;
+                }
+                eprintln!("[DEBUG] {} changed on disk, re-indexing", container_name);
+            }
+        }
+
+        let _ = app.emit(
+            "conversion-progress",
+            ConversionProgress {
+                progress_type: Some("progress".to_string()),
+                current: i,
+                total: container_count,
+                file_name: format!("Indexing {}...", container_name),
+                cached: false,
+                error: None,
+            },
+        );
+
+        let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+        // type_filter implies include_types, and game_paks locates global.utoc for
+        // the script objects. The tool filters, so `files` comes back holding
+        // only material instances.
+        let request = serde_json::json!({
+            "action": "list_iostore_files",
+            "file_path": utoc.to_string_lossy(),
+            "aes_key": MARVEL_AES_KEY,
+            "type_filter": [BROWSABLE_ASSET_TYPE],
+            "game_paks": paks_path,
+        });
+
+        let response = match send_tool_request(proc, &request).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("[DEBUG] Failed to list {}: {}", container_name, e);
+                if first_error.is_none() {
+                    first_error = Some(format!("{}: {}", container_name, e));
+                }
+                continue;
+            }
+        };
+
+        let success = response.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !success {
+            let msg = response
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
+            eprintln!("[DEBUG] list_iostore_files failed for {}: {}", container_name, msg);
+            if first_error.is_none() {
+                first_error = Some(format!("{}: {}", container_name, msg));
+            }
+            continue;
+        }
+
+        let data = response.get("data");
+
+        // Without script objects every class reads as unknown, the filter matches
+        // nothing, and the container would look empty rather than unresolved.
+        if data
+            .and_then(|d| d.get("script_objects_loaded"))
+            .and_then(|v| v.as_bool())
+            == Some(false)
+        {
+            eprintln!("[DEBUG] {}: script objects not loaded, asset types unresolved", container_name);
+            if first_error.is_none() {
+                first_error = Some(format!(
+                    "Asset types could not be resolved for {} (global.utoc not found in the Paks directory).",
+                    container_name
+                ));
+            }
+        }
+
+        if let Some(files) = data.and_then(|d| d.get("files")).and_then(|f| f.as_array()) {
+            let mut container_assets = Vec::with_capacity(files.len());
+            let mut kept = 0usize;
+            for entry in files {
+                let Some(raw) = entry.as_str() else { continue };
+                total_packages += 1;
+                let Some(normalized) = normalize_package_path(raw) else { continue };
+                if is_hidden_root(&normalized) {
+                    continue;
+                }
+                if seen.insert(normalized.clone()) {
+                    kept += 1;
+                }
+                container_assets.push(normalized);
+            }
+            eprintln!(
+                "[DEBUG] {}: {} material instances, {} new",
+                container_name,
+                files.len(),
+                kept
+            );
+
+            // Only cache a container that was read cleanly - a failed read
+            // continues above, so it is re-read next time rather than remembered
+            // as empty.
+            if let Some((size, modified_ms)) = identity {
+                fresh_entries.push(CachedContainer {
+                    name: container_name.clone(),
+                    size,
+                    modified_ms,
+                    assets: container_assets,
+                });
+            }
+        }
+    }
+
+    drop(process_guard);
+
+    let mut assets: Vec<String> = seen.into_iter().collect();
+    assets.sort();
+
+    eprintln!(
+        "[DEBUG] Asset index built: {} material instances from {} packages across {} containers ({} reused from cache, {} read)",
+        assets.len(),
+        total_packages,
+        container_count,
+        reused,
+        container_count - reused
+    );
+
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: container_count,
+            total: container_count,
+            file_name: "Index complete!".to_string(),
+            cached: false,
+            error: None,
+        },
+    );
+
+    if assets.is_empty() {
+        return Err(first_error.unwrap_or_else(|| {
+            "No material instances found in the game containers. Check the Game Paks path in Settings.".to_string()
+        }));
+    }
+
+    // Written from the containers present now, so one that a patch removed drops
+    // out of the cache instead of lingering.
+    fs::create_dir_all(get_manual_cache_dir()).map_err(|e| e.to_string())?;
+    let cache = AssetIndexCache {
+        version: ASSET_INDEX_CACHE_VERSION,
+        containers: fresh_entries,
+    };
+    match serde_json::to_string(&cache) {
+        Ok(json) => {
+            if let Err(e) = fs::write(&index_cache_path, &json) {
+                eprintln!("[DEBUG] Failed to cache asset index: {}", e);
+            } else {
+                eprintln!("[DEBUG] Cached asset index to {:?}", index_cache_path);
+            }
+        }
+        Err(e) => eprintln!("[DEBUG] Failed to serialize asset index: {}", e),
+    }
+
+    Ok(AssetIndexResult {
+        total_packages,
+        assets,
+        // Nothing had to be read: every container came back from the cache.
+        cached: reused == container_count,
+        container_count,
+        error: first_error,
+    })
+}
+
+#[tauri::command]
+async fn extract_manual_assets(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    asset_paths: Vec<String>,
+) -> Result<HeroVfxResult, String> {
+    eprintln!("[DEBUG] extract_manual_assets called with {} paths", asset_paths.len());
+
+    if asset_paths.is_empty() {
+        return Err("No assets queued for extraction.".to_string());
+    }
+
+    let (paks_path, usmap_path) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.paks_path.clone(), settings.usmap_path.clone())
+    };
+    let paks_path =
+        paks_path.ok_or_else(|| "Game Paks path not set. Please set it in Settings.".to_string())?;
+
+    let tool_path = get_uasset_tool_path(&app);
+    if !tool_path.exists() {
+        return Err(format!("UAssetTool not found at: {:?}", tool_path));
+    }
+
+    let extract_dir = get_manual_cache_dir().join("extracted");
+    let json_dir = get_manual_cache_dir().join("json");
+
+    // Start from a clean slate so a queue only ever imports what it asked for.
+    if extract_dir.exists() {
+        fs::remove_dir_all(&extract_dir).map_err(|e| e.to_string())?;
+    }
+    if json_dir.exists() {
+        fs::remove_dir_all(&json_dir).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&json_dir).map_err(|e| e.to_string())?;
+
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: 0,
+            total: asset_paths.len(),
+            file_name: format!("Extracting {} assets from game files...", asset_paths.len()),
+            cached: false,
+            error: None,
+        },
+    );
+
+    // A queue can hold hundreds of entries, well past a safe command line, so the
+    // patterns go through a filter file the same way icon extraction does.
+    let filters_txt = get_manual_cache_dir().join("manual_filters.txt");
+    let filter_content: String = asset_paths
+        .iter()
+        .map(|p| package_filter_for(p))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&filters_txt, &filter_content)
+        .map_err(|e| format!("Failed to write filter file: {}", e))?;
+
+    let (stdout, stderr) = run_uasset_tool_cli(
+        &tool_path,
+        &[
+            "extract_iostore_legacy",
+            &paks_path,
+            &extract_dir.to_string_lossy(),
+            "--filter",
+            &filters_txt.to_string_lossy(),
+        ],
+    )
+    .await?;
+
+    let uasset_files = find_files_recursive(&extract_dir, ".uasset");
+    if uasset_files.is_empty() {
+        return Err(format!(
+            "No assets were extracted. stdout: {}... stderr: {}...",
+            &stdout[..stdout.len().min(300)],
+            &stderr[..stderr.len().min(300)]
+        ));
+    }
+
+    eprintln!(
+        "[DEBUG] Extracted {}/{} queued assets",
+        uasset_files.len(),
+        asset_paths.len()
+    );
+
+    let total = uasset_files.len();
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: 0,
+            total,
+            file_name: format!("Converting {} assets...", total),
+            cached: false,
+            error: None,
+        },
+    );
+
+    let file_paths: Vec<String> = uasset_files
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    let mut process_guard = state.tool_process.lock().await;
+    let proc = get_or_spawn_tool(&mut process_guard, &tool_path).await?;
+
+    let request = serde_json::json!({
+        "action": "batch_to_json",
+        "file_paths": file_paths,
+        "output_path": json_dir.to_string_lossy(),
+        "base_path": extract_dir.to_string_lossy(),
+        "usmap_path": usmap_path,
+    });
+
+    match send_tool_request(proc, &request).await {
+        Ok(resp) => {
+            let success = resp.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let msg = resp.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown");
+            eprintln!("[DEBUG] Manual batch_to_json success={}: {}", success, msg);
+            if let Some(errors) = resp.get("data").and_then(|d| d.get("errors")).and_then(|e| e.as_array()) {
+                for err in errors {
+                    eprintln!("[DEBUG] Manual batch_to_json error: {:?}", err);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[DEBUG] send_tool_request error for batch_to_json: {}", e);
+        }
+    }
+
+    drop(process_guard);
+
+    // Pair each JSON with its source .uasset by mirrored relative path rather
+    // than by walk order - the caller indexes the two lists together for
+    // save-back, and two independent directory walks are not guaranteed to
+    // enumerate in the same order.
+    let mut json_paths: Vec<String> = Vec::new();
+    let mut paired_uassets: Vec<String> = Vec::new();
+    for json_path in find_files_recursive(&json_dir, ".json") {
+        let uasset_path = json_path
+            .strip_prefix(&json_dir)
+            .map(|rel| extract_dir.join(rel).with_extension("uasset"))
+            .ok()
+            .filter(|candidate| candidate.exists());
+
+        if uasset_path.is_none() {
+            eprintln!("[DEBUG] No source .uasset found for {:?}", json_path);
+        }
+
+        json_paths.push(json_path.to_string_lossy().to_string());
+        paired_uassets.push(
+            uasset_path
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default(),
+        );
+    }
+
+    let _ = app.emit(
+        "conversion-progress",
+        ConversionProgress {
+            progress_type: Some("progress".to_string()),
+            current: total,
+            total,
+            file_name: "Conversion complete!".to_string(),
+            cached: false,
+            error: None,
+        },
+    );
+
+    let missing = asset_paths.len().saturating_sub(uasset_files.len());
+    let error = if missing > 0 {
+        Some(format!(
+            "{} of {} queued assets could not be found in the game containers.",
+            missing,
+            asset_paths.len()
+        ))
+    } else {
+        None
+    };
+
+    Ok(HeroVfxResult {
+        hero_id: "manual".to_string(),
+        uasset_paths: paired_uassets,
+        json_paths,
+        cached: false,
+        error,
+    })
+}
+
+#[tauri::command]
+fn get_manual_cache_info() -> CacheInfo {
+    let cache_dir = get_manual_cache_dir();
+    let mut file_count: usize = 0;
+    let mut total_size = 0u64;
+
+    fn visit_dirs(dir: &Path, count: &mut usize, size: &mut u64) -> std::io::Result<()> {
+        if dir.is_dir() {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dirs(&path, count, size)?;
+                } else {
+                    *count += 1;
+                    *size += entry.metadata()?.len();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let _ = visit_dirs(&cache_dir, &mut file_count, &mut total_size);
+
+    CacheInfo {
+        file_count,
+        total_size_bytes: total_size,
+        cache_dir: cache_dir.to_string_lossy().to_string(),
+    }
+}
+
+#[tauri::command]
+fn clear_manual_cache() -> Result<(), String> {
+    let cache_dir = get_manual_cache_dir();
+    eprintln!("[DEBUG] Clearing manual extraction cache: {:?}", cache_dir);
+    if cache_dir.exists() {
+        fs::remove_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// ============================================================================
 // APP INITIALIZATION
 // ============================================================================
 
@@ -3024,6 +3722,10 @@ pub fn run() {
             scan_directory_for_uassets,
             batch_convert_directory,
             batch_convert_files,
+            list_game_assets,
+            extract_manual_assets,
+            get_manual_cache_info,
+            clear_manual_cache,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -3064,4 +3766,173 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod manual_extraction_tests {
+    use super::*;
+
+    // Every sample below is a real chunk path taken from the game's containers,
+    // as UAssetTool 1.5.8 hands it over.
+    #[test]
+    fn keeps_game_content_paths() {
+        assert_eq!(
+            normalize_package_path(
+                "Marvel/Content/Marvel/VFX/Materials/Characters/1030/Materials/1030801/MI_Lobby_1030801_38_017.uasset"
+            ),
+            Some("Marvel/Content/Marvel/VFX/Materials/Characters/1030/Materials/1030801/MI_Lobby_1030801_38_017.uasset".to_string())
+        );
+    }
+
+    #[test]
+    fn keeps_the_full_root_of_plugin_content_paths() {
+        // The plugin nests under Marvel/Plugins in the tree rather than sitting
+        // beside it, which is where flattening the root to MarvelGAS put it.
+        assert_eq!(
+            normalize_package_path(
+                "Marvel/Plugins/MarvelGAS/Content/Marvel/VFX/Materials/Characters/1025/MI_1025_ShieldsGlow_103_04.uasset"
+            ),
+            Some("Marvel/Plugins/MarvelGAS/Content/Marvel/VFX/Materials/Characters/1025/MI_1025_ShieldsGlow_103_04.uasset".to_string())
+        );
+    }
+
+    #[test]
+    fn keeps_engine_content_paths() {
+        assert_eq!(
+            normalize_package_path("Engine/Content/EditorMaterials/Camera/MI_CineMat_Rig.uasset"),
+            Some("Engine/Content/EditorMaterials/Camera/MI_CineMat_Rig.uasset".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_paths_without_a_content_root() {
+        assert_eq!(normalize_package_path("Marvel/VFX/Materials/MI_Thing.uasset"), None);
+    }
+
+    #[test]
+    fn game_content_uses_direct_lookup_filter() {
+        // The `/Game/` form resolves through a package-id hash lookup instead of
+        // a full scan of ~570k packages, which is what makes large queues viable.
+        assert_eq!(
+            package_filter_for("Marvel/Content/Marvel/VFX/Materials/Characters/1030/MI_Lobby_38_017.uasset"),
+            "/Game/Marvel/VFX/Materials/Characters/1030/MI_Lobby_38_017"
+        );
+    }
+
+    #[test]
+    fn plugin_content_falls_back_to_substring_filter() {
+        // The full root no longer equals "Marvel", so plugin content still takes
+        // the scan branch rather than being mistaken for /Game/ content.
+        assert_eq!(
+            package_filter_for(
+                "Marvel/Plugins/MarvelGAS/Content/Marvel/VFX/Materials/Characters/1025/MI_1025_ShieldsGlow_103_04.uasset"
+            ),
+            "Marvel/VFX/Materials/Characters/1025/MI_1025_ShieldsGlow_103_04"
+        );
+    }
+
+    #[test]
+    fn hides_engine_content_and_its_plugins() {
+        assert!(is_hidden_root("Engine/Content/EditorMaterials/Camera/MI_CineMat_Rig.uasset"));
+        assert!(is_hidden_root(
+            "Engine/Plugins/Interchange/Runtime/Content/gltf/MaterialInstances/MI_ClearCoat_Blend.uasset"
+        ));
+        assert!(is_hidden_root("Engine/Plugins/FX/Niagara/Content/Materials/MI_Thing.uasset"));
+        // Game content and its plugins stay visible.
+        assert!(!is_hidden_root("Marvel/Content/Marvel/VFX/Materials/MI_Fire_25_002.uasset"));
+        assert!(!is_hidden_root(
+            "Marvel/Plugins/MarvelGAS/Content/Marvel/Characters/1023/MI_Weapon_01.uasset"
+        ));
+        // Matching is on the mount segment, not a substring of it.
+        assert!(!is_hidden_root("EngineExtras/Content/Materials/MI_Thing.uasset"));
+        assert!(!is_hidden_root("EngineExtras/Plugins/X/Content/MI_Thing.uasset"));
+        assert!(!is_hidden_root("Marvel/Content/Engine/MI_Thing.uasset"));
+    }
+
+    #[test]
+    fn skips_containers_that_carry_no_browsable_materials() {
+        // Kept: everything the tree is actually built from.
+        for keep in [
+            "pakchunkCharacter-Windows.utoc",
+            "pakchunkUI-Windows.utoc",
+            "pakchunkEnv-Windows.utoc",
+            "pakchunkCommon-Windows.utoc",
+            "pakchunkVFX-Windows.utoc",
+            "pakchunk0-Windows.utoc",
+            "Patch_-Windows_1.1.3791970_P.utoc",
+        ] {
+            assert!(!is_skipped_container(keep), "{} must be indexed", keep);
+        }
+
+        // Skipped: scanned a lot for little or nothing.
+        for skip in [
+            "pakchunkMap1-Windows.utoc",
+            "pakchunkMap8-Windows.utoc",
+            "pakchunkMap8optional-Windows.utoc",
+            "pakchunkHQ-Windows.utoc",
+            "pakchunkLQ-Windows.utoc",
+            "pakchunkMovies-Windows.utoc",
+            "pakchunkWwise-Windows.utoc",
+            "pakchunkLocres-Windows.utoc",
+            "pakchunkShaderAsset-Windows.utoc",
+            "global.utoc",
+            "pakchunk0optional-Windows.utoc",
+            "pakchunkCharacteroptional-Windows.utoc",
+            "pakchunkVFXoptional-Windows.utoc",
+        ] {
+            assert!(is_skipped_container(skip), "{} must be skipped", skip);
+        }
+
+        // A map added by a later update is covered without a code change.
+        assert!(is_skipped_container("pakchunkMap9-Windows.utoc"));
+    }
+
+    #[test]
+    fn container_identity_tracks_patched_files() {
+        // What decides whether a container is re-typed after a game update.
+        let temp = std::env::temp_dir().join(format!("rvfxe_ident_test_{}", std::process::id()));
+        fs::create_dir_all(&temp).unwrap();
+        let utoc = temp.join("pakchunkVFX-Windows.utoc");
+
+        fs::write(&utoc, b"original").unwrap();
+        let before = container_identity(&utoc).unwrap();
+        assert_eq!(before, container_identity(&utoc).unwrap(), "unchanged file must read the same");
+
+        // A patch rewrites the container: different length, so it no longer matches.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(&utoc, b"patched content").unwrap();
+        let after = container_identity(&utoc).unwrap();
+        assert_ne!(before, after, "a rewritten container must not be reused");
+
+        assert!(container_identity(&temp.join("missing.utoc")).is_none());
+
+        fs::remove_dir_all(&temp).unwrap();
+    }
+
+    #[test]
+    fn skips_mod_containers_in_subfolders() {
+        // Mod loaders put containers in ~mods/; only the real game containers
+        // sitting directly in /Paks/ may be indexed or extracted from.
+        let temp = std::env::temp_dir().join(format!("rvfxe_paks_test_{}", std::process::id()));
+        let mods_dir = temp.join("~mods");
+        fs::create_dir_all(&mods_dir).unwrap();
+        fs::write(temp.join("pakchunkVFX-Windows.utoc"), b"").unwrap();
+        fs::write(temp.join("global.utoc"), b"").unwrap();
+        fs::write(temp.join("pakchunk0-Windows.pak"), b"").unwrap();
+        fs::write(mods_dir.join("some_mod_P.utoc"), b"").unwrap();
+        fs::create_dir_all(temp.join("weird.utoc")).unwrap();
+
+        let found = collect_game_containers(&temp).unwrap();
+        let names: Vec<String> = found
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        // global.utoc is filtered by is_skipped_container, so only the real
+        // browsable container survives here.
+        assert_eq!(names, vec!["pakchunkVFX-Windows.utoc"]);
+        assert!(!names.iter().any(|n| n.contains("some_mod")));
+
+        fs::remove_dir_all(&temp).unwrap();
+    }
 }
